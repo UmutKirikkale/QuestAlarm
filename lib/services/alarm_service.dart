@@ -29,6 +29,15 @@ const String prefsScheduledAlarm = 'scheduled_alarm_iso';
 /// Yer tutucu 8-bit alarm sesi (assets/audio/alarm.mp3 ekleyin).
 const String alarmAssetPath = 'audio/alarm.mp3';
 
+/// Alarm kurulamadığında kullanıcıya gösterilen anlaşılır hata.
+class AlarmScheduleException implements Exception {
+  AlarmScheduleException(this.message);
+  final String message;
+
+  @override
+  String toString() => message;
+}
+
 /// Arka plan alarmı: kurma, iptal, dinleme ve ses çalma.
 class AlarmService {
   AlarmService._();
@@ -74,8 +83,29 @@ class AlarmService {
 
     await _initNotifications();
     _registerAlarmPort();
+    await _requestAndroidPermissions(silent: true);
 
     _initialized = true;
+  }
+
+  AndroidFlutterLocalNotificationsPlugin? get _androidNotifications =>
+      _notifications?.resolvePlatformSpecificImplementation<
+          AndroidFlutterLocalNotificationsPlugin>();
+
+  /// Bildirim ve tam zamanlı alarm izinlerini ister (Android 12+).
+  Future<void> _requestAndroidPermissions({bool silent = false}) async {
+    final android = _androidNotifications;
+    if (android == null) return;
+
+    await android.requestNotificationsPermission();
+    final exactGranted = await android.requestExactAlarmsPermission();
+
+    if (!silent && exactGranted == false) {
+      throw AlarmScheduleException(
+        'Tam zamanlı alarm izni kapalı.\n'
+        'Ayarlar → Uygulamalar → QuestAlarm → Alarmlar ve hatırlatıcılar → İzin ver',
+      );
+    }
   }
 
   Future<void> _initNotifications() async {
@@ -171,6 +201,10 @@ class AlarmService {
 
   /// Seçilen saate alarm kurar (bugün veya yarın).
   Future<DateTime> scheduleAlarm(TimeOfDay time) async {
+    if (!_initialized) {
+      await initialize();
+    }
+
     final scheduled = nextOccurrence(time);
 
     if (!Platform.isAndroid) {
@@ -178,12 +212,14 @@ class AlarmService {
       return scheduled;
     }
 
+    await _requestAndroidPermissions();
+
     await cancelAlarm();
 
     final prefs = await SharedPreferences.getInstance();
     await prefs.setString(prefsScheduledAlarm, scheduled.toIso8601String());
 
-    final success = await AndroidAlarmManager.oneShotAt(
+    var alarmManagerOk = await AndroidAlarmManager.oneShotAt(
       scheduled,
       questAlarmId,
       alarmRingCallback,
@@ -194,11 +230,45 @@ class AlarmService {
       alarmClock: true,
     );
 
-    if (!success) {
-      throw Exception('Alarm kurulamadı. Tam zaman iznini kontrol edin.');
+    if (!alarmManagerOk) {
+      alarmManagerOk = await AndroidAlarmManager.oneShotAt(
+        scheduled,
+        questAlarmId,
+        alarmRingCallback,
+        exact: false,
+        wakeup: true,
+        allowWhileIdle: true,
+        rescheduleOnReboot: true,
+        alarmClock: true,
+      );
     }
 
-    await _scheduleBackupNotification(scheduled);
+    var notificationOk = false;
+    try {
+      await _scheduleBackupNotification(scheduled, exact: true);
+      notificationOk = true;
+    } on PlatformException catch (e) {
+      debugPrint('AlarmService exact bildirim hatası: $e');
+      try {
+        await _scheduleBackupNotification(scheduled, exact: false);
+        notificationOk = true;
+      } on PlatformException catch (e2) {
+        debugPrint('AlarmService bildirim hatası: $e2');
+      }
+    } catch (e) {
+      debugPrint('AlarmService bildirim hatası: $e');
+    }
+
+    if (!alarmManagerOk && !notificationOk) {
+      throw AlarmScheduleException(
+        'Alarm kurulamadı.\n'
+        'Ayarlar → Uygulamalar → QuestAlarm → Bildirimler ve Alarmlar izinlerini açın.',
+      );
+    }
+
+    if (!alarmManagerOk) {
+      debugPrint('AlarmService: AlarmManager başarısız, yalnızca bildirim ile devam.');
+    }
 
     return scheduled;
   }
@@ -231,7 +301,10 @@ class AlarmService {
     return scheduled;
   }
 
-  Future<void> _scheduleBackupNotification(DateTime scheduled) async {
+  Future<void> _scheduleBackupNotification(
+    DateTime scheduled, {
+    required bool exact,
+  }) async {
     if (_notifications == null) return;
 
     final tzScheduled = tz.TZDateTime.from(scheduled, tz.local);
@@ -254,7 +327,9 @@ class AlarmService {
       'Sabah Canavarı saldırıyor!',
       tzScheduled,
       const NotificationDetails(android: androidDetails),
-      androidScheduleMode: AndroidScheduleMode.exactAllowWhileIdle,
+      androidScheduleMode: exact
+          ? AndroidScheduleMode.exactAllowWhileIdle
+          : AndroidScheduleMode.inexactAllowWhileIdle,
       uiLocalNotificationDateInterpretation:
           UILocalNotificationDateInterpretation.absoluteTime,
       matchDateTimeComponents: null,

@@ -331,15 +331,33 @@ Future<void> _scheduleAlarm(BuildContext context) async {
         ),
       ),
     );
+  } on AlarmScheduleException catch (e) {
+    if (!context.mounted) return;
+    ScaffoldMessenger.of(context).showSnackBar(
+      SnackBar(
+        content: Text(
+          e.message,
+          style: const TextStyle(
+            fontFamily: 'monospace',
+            fontSize: 12,
+            color: QuestTheme.onBackground,
+          ),
+        ),
+        backgroundColor: QuestTheme.error,
+        duration: const Duration(seconds: 6),
+        behavior: SnackBarBehavior.floating,
+      ),
+    );
   } catch (e) {
     if (!context.mounted) return;
     ScaffoldMessenger.of(context).showSnackBar(
       SnackBar(
         content: Text(
           'Alarm kurulamadı: $e',
-          style: const TextStyle(fontFamily: 'monospace'),
+          style: const TextStyle(fontFamily: 'monospace', fontSize: 12),
         ),
         backgroundColor: QuestTheme.error,
+        duration: const Duration(seconds: 5),
       ),
     );
   }
