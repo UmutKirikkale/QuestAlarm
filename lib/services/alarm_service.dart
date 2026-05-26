@@ -10,6 +10,7 @@ import 'package:flutter/foundation.dart';
 import 'package:flutter/services.dart';
 import 'package:flutter_local_notifications/flutter_local_notifications.dart';
 import 'package:flutter_timezone/flutter_timezone.dart';
+import 'package:permission_handler/permission_handler.dart';
 import 'package:shared_preferences/shared_preferences.dart';
 import 'package:timezone/data/latest_all.dart' as tz_data;
 import 'package:timezone/timezone.dart' as tz;
@@ -28,6 +29,15 @@ const String prefsScheduledAlarm = 'scheduled_alarm_iso';
 
 /// Yer tutucu 8-bit alarm sesi (assets/audio/alarm.mp3 ekleyin).
 const String alarmAssetPath = 'audio/alarm.mp3';
+
+/// Android 12+ (API 31) alt sınırı.
+const int _android12Sdk = 31;
+
+/// İzin reddedildiğinde kullanıcıya gösterilen mesaj.
+const String alarmPermissionsDeniedMessage =
+    'Lütfen alarmın çalışması için ayarlardan izinleri verin';
+
+const MethodChannel _deviceChannel = MethodChannel('com.questalarm/device');
 
 /// Alarm kurulamadığında kullanıcıya gösterilen anlaşılır hata.
 class AlarmScheduleException implements Exception {
@@ -83,7 +93,6 @@ class AlarmService {
 
     await _initNotifications();
     _registerAlarmPort();
-    await _requestAndroidPermissions(silent: true);
 
     _initialized = true;
   }
@@ -92,20 +101,55 @@ class AlarmService {
       _notifications?.resolvePlatformSpecificImplementation<
           AndroidFlutterLocalNotificationsPlugin>();
 
-  /// Bildirim ve tam zamanlı alarm izinlerini ister (Android 12+).
-  Future<void> _requestAndroidPermissions({bool silent = false}) async {
+  Future<int> _androidSdkInt() async {
+    if (!Platform.isAndroid) return 0;
+    try {
+      final sdk = await _deviceChannel.invokeMethod<int>('getSdkInt');
+      return sdk ?? 0;
+    } catch (e) {
+      debugPrint('AlarmService SDK okunamadı: $e');
+      return _android12Sdk;
+    }
+  }
+
+  Future<bool> _isAndroid12OrAbove() async {
+    if (!Platform.isAndroid) return false;
+    return await _androidSdkInt() >= _android12Sdk;
+  }
+
+  /// Android 12+ için alarm izinlerini ister; hepsi verilmezse false döner.
+  Future<bool> _ensureAndroid12AlarmPermissions() async {
+    const required = <Permission>[
+      Permission.scheduleExactAlarm,
+      Permission.notification,
+      Permission.systemAlertWindow,
+    ];
+
+    for (final permission in required) {
+      if (await permission.isGranted) continue;
+
+      final status = await permission.request();
+      if (!status.isGranted) {
+        return false;
+      }
+    }
+
+    for (final permission in required) {
+      if (!await permission.isGranted) {
+        return false;
+      }
+    }
+
+    return true;
+  }
+
+  /// Android 11 ve altı: flutter_local_notifications ile bildirim / exact alarm.
+  Future<void> _requestLegacyAndroidPermissions() async {
     final android = _androidNotifications;
     if (android == null) return;
 
     await android.requestNotificationsPermission();
-    final exactGranted = await android.requestExactAlarmsPermission();
-
-    if (!silent && exactGranted == false) {
-      throw AlarmScheduleException(
-        'Tam zamanlı alarm izni kapalı.\n'
-        'Ayarlar → Uygulamalar → QuestAlarm → Alarmlar ve hatırlatıcılar → İzin ver',
-      );
-    }
+    await android.requestExactAlarmsPermission();
   }
 
   Future<void> _initNotifications() async {
@@ -212,7 +256,14 @@ class AlarmService {
       return scheduled;
     }
 
-    await _requestAndroidPermissions();
+    if (await _isAndroid12OrAbove()) {
+      final permissionsGranted = await _ensureAndroid12AlarmPermissions();
+      if (!permissionsGranted) {
+        throw AlarmScheduleException(alarmPermissionsDeniedMessage);
+      }
+    } else {
+      await _requestLegacyAndroidPermissions();
+    }
 
     await cancelAlarm();
 

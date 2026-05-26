@@ -17,6 +17,7 @@ dependencies:
   flutter_local_notifications: ^18.0.1
   flutter_timezone: ^3.0.1
   timezone: ^0.10.0
+  permission_handler: ^11.4.0
 
 dev_dependencies:
   flutter_test:
