@@ -28,8 +28,14 @@ class AuthService {
   }
 
   Future<UserCredential?> signInWithGoogle() async {
-    await _googleSignIn.signOut();
     await _ensureGoogleSignInInitialized();
+    try {
+      // Yeni girişten önce önceki hesabı temizle.
+      await _googleSignIn.signOut();
+    } catch (_) {
+      // Bazı cihazlarda ilk denemede oturum olmadığı için hata dönebilir.
+    }
+
     final googleUser = await _googleSignIn.authenticate();
     final googleAuth = googleUser.authentication;
     final credential = GoogleAuthProvider.credential(
