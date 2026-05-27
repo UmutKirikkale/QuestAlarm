@@ -12,6 +12,11 @@ import 'package:flutter_local_notifications/flutter_local_notifications.dart';
 import 'package:flutter_timezone/flutter_timezone.dart';
 import 'package:permission_handler/permission_handler.dart';
 import 'package:shared_preferences/shared_preferences.dart';
+import 'analytics_service.dart';
+import '../models/battle_summary.dart';
+import 'battle_summary_service.dart';
+import 'player_service.dart';
+import 'widget_service.dart';
 import 'package:timezone/data/latest_all.dart' as tz_data;
 import 'package:timezone/timezone.dart' as tz;
 
@@ -27,8 +32,8 @@ const String prefsPendingBattle = 'pending_battle_screen';
 /// SharedPreferences: kurulu alarm zamanı (ISO-8601).
 const String prefsScheduledAlarm = 'scheduled_alarm_iso';
 
-/// Yer tutucu 8-bit alarm sesi (assets/audio/alarm.mp3 ekleyin).
-const String alarmAssetPath = 'audio/alarm.mp3';
+/// 8-bit alarm sesi (CC0 — assets/audio/ATTRIBUTION.txt).
+const String alarmAssetPath = 'audio/alarm.m4a';
 
 /// Android 12+ (API 31) alt sınırı.
 const int _android12Sdk = 31;
@@ -324,7 +329,7 @@ class AlarmService {
     return scheduled;
   }
 
-  /// Alarmı ve yedek bildirimi iptal eder.
+  /// Alarmı ve yedek bildirimi iptal eder (ceza uygulanmaz).
   Future<void> cancelAlarm() async {
     if (Platform.isAndroid) {
       await AndroidAlarmManager.cancel(questAlarmId);
@@ -334,6 +339,42 @@ class AlarmService {
     final prefs = await SharedPreferences.getInstance();
     await prefs.remove(prefsScheduledAlarm);
     await stopAlarmSound();
+  }
+
+  /// Aktif alarm/savaş sırasında kaçış — ağır ceza uygular.
+  Future<void> forfeitActiveAlarm() async {
+    final prefs = await SharedPreferences.getInstance();
+    final pending = prefs.getBool(prefsPendingBattle) ?? false;
+    if (pending) {
+      final player = await PlayerService.instance.loadPlayer();
+      await PlayerService.instance.applyDefeat();
+      await BattleSummaryService.instance.save(
+        BattleSummary(
+          outcome: BattleOutcome.forfeit,
+          monsterName: 'Sabah Baskini',
+          streakBefore: player.streak,
+          streakAfter: 0,
+          reason: 'Alarm ertelendi veya savas terk edildi',
+          timestampIso: DateTime.now().toIso8601String(),
+        ),
+      );
+      await WidgetService.instance.updateLiveWidget(status: LiveWidgetStatus.sad);
+    }
+    await cancelAlarm();
+    await clearPendingBattle();
+  }
+
+  /// Alarmı erteler; aktif savaş varsa ağır ceza uygular.
+  Future<DateTime> snoozeAlarm({
+    Duration delay = const Duration(minutes: 5),
+  }) async {
+    await forfeitActiveAlarm();
+    final snoozeAt = DateTime.now().add(delay);
+    final scheduled = await scheduleAlarm(
+      TimeOfDay(hour: snoozeAt.hour, minute: snoozeAt.minute),
+    );
+    unawaited(AnalyticsService.instance.logAlarmSnoozed());
+    return scheduled;
   }
 
   /// [TimeOfDay] için bir sonraki gerçekleşme zamanını hesaplar.

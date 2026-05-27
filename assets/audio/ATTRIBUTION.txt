@@ -1,0 +1,13 @@
+Ses kaynakları (CC0 — Public Domain)
+
+hit.mp3
+  Kaynak: OpenGameArt — "Attack miss or hit sounds(2)" (attack_hit.mp3)
+  Yazar: pauliuw
+  Lisans: CC0 1.0
+  https://opengameart.org/content/attack-miss-or-hit-sounds2
+
+alarm.m4a
+  Kaynak: OpenGameArt LPC — "Short alarm" (alarm.ogg, AAC/m4a olarak dönüştürüldü)
+  Yazar: yd
+  Lisans: CC0 1.0
+  https://lpc.opengameart.org/content/short-alarm

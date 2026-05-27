@@ -1,10 +1,8 @@
-QuestAlarm — Alarm sesi
+QuestAlarm — Ses dosyaları
 
-Bu klasöre 8-bit retro alarm dosyanızı ekleyin:
+Bu klasörde uygulama sesleri bulunur:
 
-  alarm.mp3
+  alarm.m4a  — Alarm çalarken döngüde oynatılır (8-bit uyarı, CC0)
+  hit.mp3    — Savaş ekranında her vuruşta (CC0)
 
-Dosya adı tam olarak "alarm.mp3" olmalıdır.
-Önerilen: kısa, yüksek sesli, döngüye uygun 8-bit chiptune.
-
-Dosya yoksa uygulama sistem uyarı sesine düşer.
+Kaynak ve lisans: ATTRIBUTION.txt

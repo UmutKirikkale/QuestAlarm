@@ -1,26 +1,41 @@
+import 'dart:async';
+
 import 'package:flutter/material.dart';
 
 import '../models/item.dart';
+import '../services/analytics_service.dart';
+import '../services/player_service.dart';
+import '../theme/pixel_text.dart';
 import '../theme/quest_theme.dart';
+import '../widgets/pixel_asset_image.dart';
+import '../widgets/retro_arcade_button.dart';
+import '../widgets/retro_stat_bar.dart';
+import '../widgets/retro_window.dart';
 
 /// Altın harcanarak eşya alınan retro piksel mağaza ekranı.
-class ShopScreen extends StatelessWidget {
-  const ShopScreen({
-    super.key,
-    this.gold = 150,
-  });
+class ShopScreen extends StatefulWidget {
+  const ShopScreen({super.key});
 
-  /// Oyuncunun mevcut altın miktarı (şimdilik mock).
-  final int gold;
+  @override
+  State<ShopScreen> createState() => _ShopScreenState();
+}
 
-  /// Mağazada listelenecek sahte eşyalar.
-  static const List<Item> _mockItems = [
+class _ShopScreenState extends State<ShopScreen> {
+  int _gold = 0;
+  int _playerLevel = 1;
+  bool _loading = true;
+
+  static const List<Item> _shopItems = [
     Item(
       id: 'rusty_sword',
       name: 'Paslı Kılıç',
       price: 50,
       bonusDamage: 10,
       itemType: ItemType.weapon,
+      rarity: ItemRarity.common,
+      requiredLevel: 1,
+      criticalChance: 0.05,
+      imagePath: 'assets/images/items/sword.png',
     ),
     Item(
       id: 'iron_armor',
@@ -28,12 +43,18 @@ class ShopScreen extends StatelessWidget {
       price: 100,
       bonusDefense: 5,
       itemType: ItemType.armor,
+      rarity: ItemRarity.common,
+      requiredLevel: 2,
+      imagePath: 'assets/images/items/iron_armor.png',
     ),
     Item(
       id: 'health_potion',
       name: 'Can İksiri',
       price: 20,
       itemType: ItemType.potion,
+      rarity: ItemRarity.common,
+      requiredLevel: 1,
+      imagePath: 'assets/images/items/health_potion.png',
     ),
     Item(
       id: 'steel_blade',
@@ -41,43 +62,184 @@ class ShopScreen extends StatelessWidget {
       price: 120,
       bonusDamage: 18,
       itemType: ItemType.weapon,
+      rarity: ItemRarity.rare,
+      requiredLevel: 3,
+      criticalChance: 0.12,
+      imagePath: 'assets/images/items/steel_blade.png',
+    ),
+    Item(
+      id: 'moon_katana',
+      name: 'Ay Katanası',
+      price: 170,
+      bonusDamage: 26,
+      itemType: ItemType.weapon,
+      rarity: ItemRarity.epic,
+      requiredLevel: 5,
+      criticalChance: 0.25,
+      imagePath: 'assets/images/items/steel_blade.png',
+    ),
+    Item(
+      id: 'titan_mail',
+      name: 'Titan Zırhı',
+      price: 200,
+      bonusDefense: 14,
+      itemType: ItemType.armor,
+      rarity: ItemRarity.epic,
+      requiredLevel: 6,
+      imagePath: 'assets/images/items/iron_armor.png',
+    ),
+    Item(
+      id: 'elixir',
+      name: 'Büyük İksir',
+      price: 75,
+      itemType: ItemType.potion,
+      rarity: ItemRarity.rare,
+      requiredLevel: 4,
+      imagePath: 'assets/images/items/health_potion.png',
+    ),
+    Item(
+      id: 'storm_spear',
+      name: 'Fırtına Mızrağı',
+      price: 240,
+      bonusDamage: 34,
+      itemType: ItemType.weapon,
+      rarity: ItemRarity.legendary,
+      requiredLevel: 8,
+      criticalChance: 0.25,
+      imagePath: 'assets/images/items/sword.png',
+    ),
+    Item(
+      id: 'shadow_cloak',
+      name: 'Gölge Pelerini',
+      price: 155,
+      bonusDefense: 11,
+      itemType: ItemType.armor,
+      rarity: ItemRarity.rare,
+      requiredLevel: 4,
+      imagePath: 'assets/images/items/iron_armor.png',
     ),
   ];
 
   @override
+  void initState() {
+    super.initState();
+    unawaited(_loadGold());
+  }
+
+  Future<void> _loadGold() async {
+    final player = await PlayerService.instance.loadPlayer();
+    if (!mounted) return;
+    setState(() {
+      _gold = player.gold;
+      _playerLevel = player.level;
+      _loading = false;
+    });
+  }
+
+  Future<void> _buyItem(Item item) async {
+    final result = await PlayerService.instance.purchaseItem(item);
+    if (!result.success) {
+      final msg = switch (result.failure) {
+        PurchaseFailure.levelTooLow =>
+          'Seviye yetersiz! (Gerekli: Lv ${item.requiredLevel})',
+        PurchaseFailure.insufficientGold =>
+          'Yetersiz altın! (${item.price} G gerekli)',
+        _ => 'Satın alma başarısız',
+      };
+      if (!mounted) return;
+      ScaffoldMessenger.of(context).showSnackBar(
+        SnackBar(
+          content: Text(
+            msg,
+            style: const TextStyle(fontFamily: 'monospace', fontSize: 12),
+          ),
+          backgroundColor: QuestTheme.error,
+        ),
+      );
+      return;
+    }
+
+    final player = await PlayerService.instance.loadPlayer();
+    setState(() {
+      _gold = player.gold;
+      _playerLevel = player.level;
+    });
+
+    unawaited(
+      AnalyticsService.instance.logItemBought(
+        itemName: item.name,
+        price: item.price,
+      ),
+    );
+
+    if (!mounted) return;
+    ScaffoldMessenger.of(context).showSnackBar(
+      SnackBar(
+        content: Text(
+          '${item.name} satın alındı!',
+          style: const TextStyle(
+            fontFamily: 'monospace',
+            fontWeight: FontWeight.bold,
+          ),
+        ),
+        backgroundColor: QuestTheme.surfaceVariant,
+      ),
+    );
+  }
+
+  @override
   Widget build(BuildContext context) {
+    if (_loading) {
+      return const Scaffold(
+        backgroundColor: QuestTheme.background,
+        body: Center(
+          child: CircularProgressIndicator(color: QuestTheme.primary),
+        ),
+      );
+    }
+
     return Scaffold(
       backgroundColor: QuestTheme.background,
-      body: SafeArea(
-        child: Column(
-          crossAxisAlignment: CrossAxisAlignment.stretch,
-          children: [
-            _ShopHeader(gold: gold),
-            Expanded(
-              child: ListView.builder(
-                padding: const EdgeInsets.fromLTRB(16, 8, 16, 16),
-                itemCount: _mockItems.length,
-                itemBuilder: (context, index) {
-                  return Padding(
-                    padding: const EdgeInsets.only(bottom: 12),
-                    child: _ShopItemCard(
-                      item: _mockItems[index],
-                      onBuy: () {
-                        // Satın alma mantığı ileride eklenecek.
-                      },
-                    ),
-                  );
-                },
-              ),
+      body: DecoratedBox(
+        decoration: const BoxDecoration(
+          gradient: LinearGradient(
+            begin: Alignment.topCenter,
+            end: Alignment.bottomCenter,
+            colors: [Color(0xFF060610), Color(0xFF0D0D18)],
+          ),
+        ),
+        child: SafeArea(
+          child: Padding(
+            padding: const EdgeInsets.all(16),
+            child: Column(
+              crossAxisAlignment: CrossAxisAlignment.stretch,
+              children: [
+                _ShopHeader(gold: _gold),
+                const SizedBox(height: 12),
+                Expanded(
+                  child: ListView.builder(
+                    itemCount: _shopItems.length,
+                    itemBuilder: (context, index) {
+                      return Padding(
+                        padding: const EdgeInsets.only(bottom: 12),
+                        child: _ShopItemCard(
+                          item: _shopItems[index],
+                          playerLevel: _playerLevel,
+                          onBuy: () => _buyItem(_shopItems[index]),
+                        ),
+                      );
+                    },
+                  ),
+                ),
+              ],
             ),
-          ],
+          ),
         ),
       ),
     );
   }
 }
 
-/// Geri butonu, başlık ve altın göstergesini içeren üst bar.
 class _ShopHeader extends StatelessWidget {
   const _ShopHeader({required this.gold});
 
@@ -85,113 +247,129 @@ class _ShopHeader extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
-    return Padding(
-      padding: const EdgeInsets.fromLTRB(8, 8, 16, 12),
-      child: Column(
-        children: [
-          Align(
-            alignment: Alignment.centerLeft,
-            child: _RetroBackButton(
+    return Column(
+      crossAxisAlignment: CrossAxisAlignment.stretch,
+      children: [
+        Align(
+          alignment: Alignment.centerLeft,
+          child: SizedBox(
+            width: 100,
+            child: RetroArcadeButton(
+              label: 'GERİ',
+              height: 40,
+              fontSize: 11,
+              backgroundColor: QuestTheme.surfaceVariant,
+              foregroundColor: QuestTheme.onBackground,
               onPressed: () => Navigator.pop(context),
             ),
           ),
-          const SizedBox(height: 8),
-          Container(
-            padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 14),
-            decoration: BoxDecoration(
-              color: QuestTheme.surface,
-              border: Border.all(color: Colors.white, width: 3),
-            ),
-            child: Row(
-              children: [
-                Expanded(
-                  child: Text(
-                    'PİKSEL MAĞAZA',
-                    style: _pixelTextStyle(
-                      fontSize: 18,
-                      color: QuestTheme.primary,
-                    ),
-                  ),
+        ),
+        const SizedBox(height: 12),
+        RetroWindow(
+          padding: const EdgeInsets.all(12),
+          child: Column(
+            crossAxisAlignment: CrossAxisAlignment.stretch,
+            children: [
+              Text(
+                '🏪 PİKSEL MAĞAZA',
+                textAlign: TextAlign.center,
+                style: pixelTextStyle(
+                  fontSize: 16,
+                  color: QuestTheme.primary,
+                  letterSpacing: 2,
                 ),
-                Container(
-                  padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 6),
-                  decoration: BoxDecoration(
-                    color: const Color(0xFF3D3200),
-                    border: Border.all(color: QuestTheme.secondary, width: 2),
-                  ),
-                  child: Text(
-                    '$gold G',
-                    style: _pixelTextStyle(
-                      fontSize: 14,
-                      color: QuestTheme.secondary,
-                    ),
-                  ),
-                ),
-              ],
-            ),
+              ),
+              const SizedBox(height: 10),
+              RetroGoldCounter(gold: gold),
+            ],
           ),
-        ],
-      ),
+        ),
+      ],
     );
   }
 }
 
-/// Tek bir eşyayı gösteren retro menü kutusu kartı.
 class _ShopItemCard extends StatelessWidget {
   const _ShopItemCard({
     required this.item,
+    required this.playerLevel,
     required this.onBuy,
   });
 
   final Item item;
+  final int playerLevel;
   final VoidCallback onBuy;
 
   @override
   Widget build(BuildContext context) {
-    return Container(
-      padding: const EdgeInsets.all(12),
-      decoration: BoxDecoration(
-        color: QuestTheme.surface,
-        border: Border.all(color: Colors.black, width: 4),
-        boxShadow: const [
-          BoxShadow(
-            color: Colors.white,
-            offset: Offset(2, 2),
-          ),
-        ],
-      ),
+    final levelLocked = playerLevel < item.requiredLevel;
+    return RetroWindow(
+      padding: const EdgeInsets.all(10),
       child: Row(
         crossAxisAlignment: CrossAxisAlignment.center,
         children: [
+          PixelAssetImage(
+            imagePath: item.imagePath,
+            width: 48,
+            height: 48,
+            fit: BoxFit.contain,
+            placeholderSeed: item.id,
+          ),
+          const SizedBox(width: 10),
           Expanded(
             child: Column(
               crossAxisAlignment: CrossAxisAlignment.start,
               children: [
-                Text(
-                  item.name,
-                  style: _pixelTextStyle(fontSize: 15),
-                ),
-                const SizedBox(height: 6),
-                Text(
-                  _itemSubtitle(item),
-                  style: _pixelTextStyle(
-                    fontSize: 12,
-                    color: QuestTheme.onSurfaceMuted,
-                  ),
+                Row(
+                  children: [
+                    Expanded(
+                      child: Text(item.name, style: pixelTextStyle(fontSize: 14)),
+                    ),
+                    _RarityBadge(rarity: item.rarity),
+                  ],
                 ),
                 const SizedBox(height: 4),
                 Text(
-                  'Fiyat: ${item.price} G',
-                  style: _pixelTextStyle(
-                    fontSize: 12,
+                  _itemSubtitle(item),
+                  style: pixelTextStyle(
+                    fontSize: 11,
+                    color: QuestTheme.onSurfaceMuted,
+                  ),
+                ),
+                const SizedBox(height: 2),
+                Text(
+                  'Gereken Seviye: Lv ${item.requiredLevel}',
+                  style: pixelTextStyle(
+                    fontSize: 10,
+                    color: levelLocked
+                        ? QuestTheme.error
+                        : QuestTheme.onSurfaceMuted,
+                  ),
+                ),
+                const SizedBox(height: 2),
+                Text(
+                  '${item.price} G',
+                  style: pixelTextStyle(
+                    fontSize: 11,
                     color: QuestTheme.secondary,
                   ),
                 ),
               ],
             ),
           ),
-          const SizedBox(width: 8),
-          _BuyButton(onPressed: onBuy),
+          SizedBox(
+            width: 88,
+            child: RetroArcadeButton(
+              label: levelLocked ? 'KİLİTLİ' : 'AL',
+              height: 40,
+              fontSize: 12,
+              backgroundColor:
+                  levelLocked ? QuestTheme.surfaceVariant : QuestTheme.primary,
+              foregroundColor:
+                  levelLocked ? QuestTheme.onSurfaceMuted : QuestTheme.background,
+              onPressed: onBuy,
+            ),
+          ),
         ],
       ),
     );
@@ -199,119 +377,41 @@ class _ShopItemCard extends StatelessWidget {
 
   String _itemSubtitle(Item item) {
     return switch (item.itemType) {
-      ItemType.weapon => 'Hasar: +${item.bonusDamage}',
-      ItemType.armor => 'Savunma: +${item.bonusDefense}',
+      ItemType.weapon => 'Hasar +${item.bonusDamage}',
+      ItemType.armor => 'Savunma +${item.bonusDefense}',
       ItemType.potion => 'Can yeniler',
     };
   }
 }
 
-/// "< GERİ" retro geri dönüş butonu.
-class _RetroBackButton extends StatefulWidget {
-  const _RetroBackButton({required this.onPressed});
+class _RarityBadge extends StatelessWidget {
+  const _RarityBadge({required this.rarity});
 
-  final VoidCallback onPressed;
-
-  @override
-  State<_RetroBackButton> createState() => _RetroBackButtonState();
-}
-
-class _RetroBackButtonState extends State<_RetroBackButton> {
-  bool _isPressed = false;
+  final ItemRarity rarity;
 
   @override
   Widget build(BuildContext context) {
-    final offset = _isPressed ? 2.0 : 0.0;
+    final (label, color) = switch (rarity) {
+      ItemRarity.common => ('COMMON', const Color(0xFF9AA3B2)),
+      ItemRarity.rare => ('RARE', const Color(0xFF4FB2FF)),
+      ItemRarity.epic => ('EPIC', const Color(0xFFC46BFF)),
+      ItemRarity.legendary => ('LEGEND', const Color(0xFFFFB347)),
+    };
 
-    return GestureDetector(
-      onTapDown: (_) => setState(() => _isPressed = true),
-      onTapUp: (_) {
-        setState(() => _isPressed = false);
-        widget.onPressed();
-      },
-      onTapCancel: () => setState(() => _isPressed = false),
-      child: Transform.translate(
-        offset: Offset(offset, offset),
-        child: Container(
-          padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 8),
-          decoration: BoxDecoration(
-            color: QuestTheme.surfaceVariant,
-            border: Border.all(color: Colors.white, width: 2),
-          ),
-          child: Text(
-            '< GERİ',
-            style: _pixelTextStyle(fontSize: 13),
-          ),
+    return Container(
+      padding: const EdgeInsets.symmetric(horizontal: 6, vertical: 2),
+      decoration: BoxDecoration(
+        color: color.withValues(alpha: 0.2),
+        border: Border.all(color: color, width: 1),
+      ),
+      child: Text(
+        label,
+        style: pixelTextStyle(
+          fontSize: 8,
+          color: color,
+          letterSpacing: 1.2,
         ),
       ),
     );
   }
-}
-
-/// Eşya kartındaki "SATIN AL" piksel butonu.
-class _BuyButton extends StatefulWidget {
-  const _BuyButton({required this.onPressed});
-
-  final VoidCallback onPressed;
-
-  @override
-  State<_BuyButton> createState() => _BuyButtonState();
-}
-
-class _BuyButtonState extends State<_BuyButton> {
-  bool _isPressed = false;
-
-  @override
-  Widget build(BuildContext context) {
-    final offset = _isPressed ? 2.0 : 0.0;
-
-    return GestureDetector(
-      onTapDown: (_) => setState(() => _isPressed = true),
-      onTapUp: (_) {
-        setState(() => _isPressed = false);
-        widget.onPressed();
-      },
-      onTapCancel: () => setState(() => _isPressed = false),
-      child: Transform.translate(
-        offset: Offset(offset, offset),
-        child: Container(
-          padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 10),
-          decoration: BoxDecoration(
-            color: QuestTheme.primary,
-            border: Border.all(color: Colors.black, width: 3),
-            boxShadow: _isPressed
-                ? null
-                : const [
-                    BoxShadow(
-                      color: Colors.white,
-                      offset: Offset(2, 2),
-                    ),
-                  ],
-          ),
-          child: Text(
-            'SATIN\nAL',
-            textAlign: TextAlign.center,
-            style: _pixelTextStyle(
-              fontSize: 11,
-              color: QuestTheme.background,
-            ),
-          ),
-        ),
-      ),
-    );
-  }
-}
-
-/// Retro arayüz için ortak monospace metin stili.
-TextStyle _pixelTextStyle({
-  required double fontSize,
-  Color color = QuestTheme.onBackground,
-}) {
-  return TextStyle(
-    fontFamily: 'monospace',
-    fontSize: fontSize,
-    fontWeight: FontWeight.bold,
-    color: color,
-    letterSpacing: 1,
-  );
 }

@@ -1,3 +1,6 @@
+import 'equipped_item.dart';
+import 'item.dart';
+
 /// Oyuncu karakterinin sınıfını temsil eder.
 enum CharacterClass {
   warrior,
@@ -6,30 +9,20 @@ enum CharacterClass {
 }
 
 /// RPG karakterinin tüm istatistiklerini tutan veri modeli.
-///
-/// [shared_preferences] ile kalıcı depolama için [toMap] ve [fromMap]
-/// metodları kullanılır.
 class Player {
-  /// Karakter seviyesi.
   final int level;
-
-  /// Mevcut deneyim puanı.
   final int currentXP;
-
-  /// Bir sonraki seviyeye ulaşmak için gereken XP.
   final int nextLevelXP;
-
-  /// Güncel can puanı.
   final int currentHP;
-
-  /// Maksimum can puanı.
   final int maxHP;
-
-  /// Toplanan altın miktarı.
   final int gold;
-
-  /// Karakterin sınıfı (Savaşçı, Büyücü, Hırsız).
   final CharacterClass characterClass;
+
+  /// Ardışık uyanma / zafer günü serisi.
+  final int streak;
+
+  final EquippedItem? equippedWeapon;
+  final EquippedItem? equippedArmor;
 
   const Player({
     required this.level,
@@ -39,9 +32,12 @@ class Player {
     required this.maxHP,
     required this.gold,
     required this.characterClass,
+    this.streak = 0,
+    this.equippedWeapon,
+    this.equippedArmor,
   });
 
-  /// Yeni oyuncu için varsayılan başlangıç değerleri.
+  /// Yeni oyuncu — başlangıç kılıcı %100 dayanıklılıkla kuşanılı.
   factory Player.initial({CharacterClass characterClass = CharacterClass.warrior}) {
     return Player(
       level: 1,
@@ -51,10 +47,22 @@ class Player {
       maxHP: 100,
       gold: 0,
       characterClass: characterClass,
+      streak: 0,
+      equippedWeapon: EquippedItem(
+        item: Item(
+          id: 'rusty_sword',
+          name: 'Paslı Kılıç',
+          price: 50,
+          bonusDamage: 10,
+          criticalChance: 0.05,
+          itemType: ItemType.weapon,
+          imagePath: 'assets/images/items/sword.png',
+        ),
+        durability: 100,
+      ),
     );
   }
 
-  /// [shared_preferences] veya JSON depolama için Map'e dönüştürür.
   Map<String, dynamic> toMap() {
     return {
       'level': level,
@@ -64,11 +72,21 @@ class Player {
       'maxHP': maxHP,
       'gold': gold,
       'characterClass': characterClass.name,
+      'streak': streak,
+      if (equippedWeapon != null) 'equippedWeapon': equippedWeapon!.toMap(),
+      if (equippedArmor != null) 'equippedArmor': equippedArmor!.toMap(),
     };
   }
 
-  /// Map verisinden [Player] nesnesi oluşturur.
   factory Player.fromMap(Map<String, dynamic> map) {
+    EquippedItem? parseEquipped(String key) {
+      final raw = map[key];
+      if (raw is Map<String, dynamic>) {
+        return EquippedItem.fromMap(raw);
+      }
+      return null;
+    }
+
     return Player(
       level: map['level'] as int? ?? 1,
       currentXP: map['currentXP'] as int? ?? 0,
@@ -77,10 +95,12 @@ class Player {
       maxHP: map['maxHP'] as int? ?? 100,
       gold: map['gold'] as int? ?? 0,
       characterClass: _parseCharacterClass(map['characterClass'] as String?),
+      streak: map['streak'] as int? ?? 0,
+      equippedWeapon: parseEquipped('equippedWeapon'),
+      equippedArmor: parseEquipped('equippedArmor'),
     );
   }
 
-  /// Belirtilen alanları güncelleyerek yeni bir [Player] kopyası döndürür.
   Player copyWith({
     int? level,
     int? currentXP,
@@ -89,6 +109,11 @@ class Player {
     int? maxHP,
     int? gold,
     CharacterClass? characterClass,
+    int? streak,
+    EquippedItem? equippedWeapon,
+    EquippedItem? equippedArmor,
+    bool clearWeapon = false,
+    bool clearArmor = false,
   }) {
     return Player(
       level: level ?? this.level,
@@ -98,10 +123,12 @@ class Player {
       maxHP: maxHP ?? this.maxHP,
       gold: gold ?? this.gold,
       characterClass: characterClass ?? this.characterClass,
+      streak: streak ?? this.streak,
+      equippedWeapon: clearWeapon ? null : (equippedWeapon ?? this.equippedWeapon),
+      equippedArmor: clearArmor ? null : (equippedArmor ?? this.equippedArmor),
     );
   }
 
-  /// String değerini güvenli şekilde [CharacterClass] enum'una çevirir.
   static CharacterClass _parseCharacterClass(String? value) {
     return CharacterClass.values.firstWhere(
       (c) => c.name == value,

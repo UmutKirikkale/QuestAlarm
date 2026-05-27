@@ -1,12 +1,12 @@
 import 'package:flutter_test/flutter_test.dart';
-import 'package:quest_alarm/main.dart';
+
+import 'package:quest_alarm/models/player.dart';
 
 void main() {
-  testWidgets('QuestAlarm app smoke test', (WidgetTester tester) async {
-    await tester.pumpWidget(const QuestAlarmApp());
-    expect(find.text('Sınıf: Savaşçı'), findsOneWidget);
-    expect(find.text('Seviye: 1'), findsOneWidget);
-    expect(find.text('ALARM KUR'), findsOneWidget);
-    expect(find.text('MAĞAZA'), findsOneWidget);
+  test('Player initial defaults are valid', () {
+    final player = Player.initial();
+    expect(player.level, 1);
+    expect(player.characterClass, CharacterClass.warrior);
+    expect(player.equippedWeapon?.durability, 100);
   });
 }

@@ -1,0 +1,29 @@
+{
+  "project_info": {
+    "project_number": "676323549645",
+    "project_id": "questalarm",
+    "storage_bucket": "questalarm.firebasestorage.app"
+  },
+  "client": [
+    {
+      "client_info": {
+        "mobilesdk_app_id": "1:676323549645:android:196a267e1c97fa0cc86484",
+        "android_client_info": {
+          "package_name": "com.questalarm.quest_alarm"
+        }
+      },
+      "oauth_client": [],
+      "api_key": [
+        {
+          "current_key": "AIzaSyDF9btbYFLiK8wUxsXtQ5UaWMTW1Od891M"
+        }
+      ],
+      "services": {
+        "appinvite_service": {
+          "other_platform_oauth_client": []
+        }
+      }
+    }
+  ],
+  "configuration_version": "1"
+}
