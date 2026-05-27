@@ -12,7 +12,20 @@
           "package_name": "com.questalarm.quest_alarm"
         }
       },
-      "oauth_client": [],
+      "oauth_client": [
+        {
+          "client_id": "676323549645-kar9au5g8tj7jvtid8thvsb5td0c6fo4.apps.googleusercontent.com",
+          "client_type": 1,
+          "android_info": {
+            "package_name": "com.questalarm.quest_alarm",
+            "certificate_hash": "0409a6ebd3afebb6464465cce286fecaa78e7ebc"
+          }
+        },
+        {
+          "client_id": "676323549645-gvm1k7snqa4fp3qa40egdsi85gh0urvv.apps.googleusercontent.com",
+          "client_type": 3
+        }
+      ],
       "api_key": [
         {
           "current_key": "AIzaSyDF9btbYFLiK8wUxsXtQ5UaWMTW1Od891M"
@@ -20,7 +33,12 @@
       ],
       "services": {
         "appinvite_service": {
-          "other_platform_oauth_client": []
+          "other_platform_oauth_client": [
+            {
+              "client_id": "676323549645-gvm1k7snqa4fp3qa40egdsi85gh0urvv.apps.googleusercontent.com",
+              "client_type": 3
+            }
+          ]
         }
       }
     }

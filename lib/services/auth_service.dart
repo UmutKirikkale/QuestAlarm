@@ -12,6 +12,7 @@ class AuthService {
   static final AuthService instance = AuthService._();
 
   final FirebaseAuth _auth = FirebaseAuth.instance;
+  final GoogleSignIn _googleSignIn = GoogleSignIn.instance;
 
   bool _googleInitialized = false;
 
@@ -20,15 +21,16 @@ class AuthService {
 
   Future<void> _ensureGoogleSignInInitialized() async {
     if (_googleInitialized) return;
-    await GoogleSignIn.instance.initialize(
+    await _googleSignIn.initialize(
       serverClientId: googleSignInWebClientId,
     );
     _googleInitialized = true;
   }
 
   Future<UserCredential?> signInWithGoogle() async {
+    await _googleSignIn.signOut();
     await _ensureGoogleSignInInitialized();
-    final googleUser = await GoogleSignIn.instance.authenticate();
+    final googleUser = await _googleSignIn.authenticate();
     final googleAuth = googleUser.authentication;
     final credential = GoogleAuthProvider.credential(
       idToken: googleAuth.idToken,
@@ -52,7 +54,7 @@ class AuthService {
 
   Future<void> signOut() async {
     try {
-      await GoogleSignIn.instance.signOut();
+      await _googleSignIn.signOut();
     } catch (_) {
       // Google oturumu yoksa görmezden gel.
     }
