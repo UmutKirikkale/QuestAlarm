@@ -17,6 +17,7 @@ class Player {
   final int maxHP;
   final int gold;
   final CharacterClass characterClass;
+  final bool hasChosenClass;
 
   /// Ardışık uyanma / zafer günü serisi.
   final int streak;
@@ -32,13 +33,17 @@ class Player {
     required this.maxHP,
     required this.gold,
     required this.characterClass,
+    this.hasChosenClass = true,
     this.streak = 0,
     this.equippedWeapon,
     this.equippedArmor,
   });
 
   /// Yeni oyuncu — başlangıç kılıcı %100 dayanıklılıkla kuşanılı.
-  factory Player.initial({CharacterClass characterClass = CharacterClass.warrior}) {
+  factory Player.initial({
+    CharacterClass characterClass = CharacterClass.warrior,
+    bool hasChosenClass = false,
+  }) {
     return Player(
       level: 1,
       currentXP: 0,
@@ -47,6 +52,7 @@ class Player {
       maxHP: 100,
       gold: 0,
       characterClass: characterClass,
+      hasChosenClass: hasChosenClass,
       streak: 0,
       equippedWeapon: EquippedItem(
         item: Item(
@@ -72,6 +78,7 @@ class Player {
       'maxHP': maxHP,
       'gold': gold,
       'characterClass': characterClass.name,
+      'hasChosenClass': hasChosenClass,
       'streak': streak,
       if (equippedWeapon != null) 'equippedWeapon': equippedWeapon!.toMap(),
       if (equippedArmor != null) 'equippedArmor': equippedArmor!.toMap(),
@@ -95,6 +102,7 @@ class Player {
       maxHP: map['maxHP'] as int? ?? 100,
       gold: map['gold'] as int? ?? 0,
       characterClass: _parseCharacterClass(map['characterClass'] as String?),
+      hasChosenClass: map['hasChosenClass'] as bool? ?? true,
       streak: map['streak'] as int? ?? 0,
       equippedWeapon: parseEquipped('equippedWeapon'),
       equippedArmor: parseEquipped('equippedArmor'),
@@ -109,6 +117,7 @@ class Player {
     int? maxHP,
     int? gold,
     CharacterClass? characterClass,
+    bool? hasChosenClass,
     int? streak,
     EquippedItem? equippedWeapon,
     EquippedItem? equippedArmor,
@@ -123,6 +132,7 @@ class Player {
       maxHP: maxHP ?? this.maxHP,
       gold: gold ?? this.gold,
       characterClass: characterClass ?? this.characterClass,
+      hasChosenClass: hasChosenClass ?? this.hasChosenClass,
       streak: streak ?? this.streak,
       equippedWeapon: clearWeapon ? null : (equippedWeapon ?? this.equippedWeapon),
       equippedArmor: clearArmor ? null : (equippedArmor ?? this.equippedArmor),

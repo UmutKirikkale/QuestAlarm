@@ -199,6 +199,7 @@ class _ShopScreenState extends State<ShopScreen> {
     }
 
     return Scaffold(
+      appBar: AppBar(title: const Text('MAĞAZA')),
       backgroundColor: QuestTheme.background,
       body: DecoratedBox(
         decoration: const BoxDecoration(
@@ -247,44 +248,24 @@ class _ShopHeader extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
-    return Column(
-      crossAxisAlignment: CrossAxisAlignment.stretch,
-      children: [
-        Align(
-          alignment: Alignment.centerLeft,
-          child: SizedBox(
-            width: 100,
-            child: RetroArcadeButton(
-              label: 'GERİ',
-              height: 40,
-              fontSize: 11,
-              backgroundColor: QuestTheme.surfaceVariant,
-              foregroundColor: QuestTheme.onBackground,
-              onPressed: () => Navigator.pop(context),
+    return RetroWindow(
+      padding: const EdgeInsets.all(12),
+      child: Column(
+        crossAxisAlignment: CrossAxisAlignment.stretch,
+        children: [
+          Text(
+            '🏪 PİKSEL MAĞAZA',
+            textAlign: TextAlign.center,
+            style: pixelTextStyle(
+              fontSize: 16,
+              color: QuestTheme.primary,
+              letterSpacing: 2,
             ),
           ),
-        ),
-        const SizedBox(height: 12),
-        RetroWindow(
-          padding: const EdgeInsets.all(12),
-          child: Column(
-            crossAxisAlignment: CrossAxisAlignment.stretch,
-            children: [
-              Text(
-                '🏪 PİKSEL MAĞAZA',
-                textAlign: TextAlign.center,
-                style: pixelTextStyle(
-                  fontSize: 16,
-                  color: QuestTheme.primary,
-                  letterSpacing: 2,
-                ),
-              ),
-              const SizedBox(height: 10),
-              RetroGoldCounter(gold: gold),
-            ],
-          ),
-        ),
-      ],
+          const SizedBox(height: 10),
+          RetroGoldCounter(gold: gold),
+        ],
+      ),
     );
   }
 }

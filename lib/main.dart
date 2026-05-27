@@ -10,8 +10,11 @@ import 'package:home_widget/home_widget.dart';
 import 'firebase_options.dart';
 import 'screens/battle_screen.dart';
 import 'screens/battle_summary_screen.dart';
+import 'screens/class_selection_screen.dart';
 import 'screens/home_screen.dart';
 import 'screens/permissions_screen.dart';
+import 'screens/auth_screen.dart';
+import 'services/auth_service.dart';
 import 'services/alarm_service.dart';
 import 'services/player_service.dart';
 import 'services/storage_service.dart';
@@ -113,17 +116,17 @@ class _QuestAlarmAppState extends State<QuestAlarmApp>
     final navigator = rootNavigatorKey.currentState;
     if (navigator == null) return;
 
-    final isFirstTime = await StorageService.instance.isFirstTime();
-    final target = isFirstTime
-        ? const PermissionsScreen()
-        : const HomeScreen();
-
     navigator.pushAndRemoveUntil(
-      MaterialPageRoute<void>(builder: (_) => target),
+      MaterialPageRoute<void>(builder: (_) => const InitialRouteScreen()),
       (route) => false,
     );
 
-    if (!showBattleSummary || isFirstTime) return;
+    if (!showBattleSummary) return;
+    if (AuthService.instance.currentUser == null) return;
+    final isFirstTime = await StorageService.instance.isFirstTime();
+    if (isFirstTime) return;
+    final player = await PlayerService.instance.loadPlayer();
+    if (!player.hasChosenClass) return;
 
     await Future<void>.delayed(const Duration(milliseconds: 250));
     if (!navigator.mounted) return;
@@ -169,20 +172,24 @@ class _QuestAlarmAppState extends State<QuestAlarmApp>
       debugShowCheckedModeBanner: false,
       theme: QuestTheme.dark,
       navigatorKey: rootNavigatorKey,
-      home: const _InitialRoute(),
+      routes: {
+        '/auth': (_) => const AuthScreen(),
+        '/initial': (_) => const InitialRouteScreen(),
+      },
+      home: const InitialRouteScreen(),
     );
   }
 }
 
 /// İlk açılışta izin kurulumu, sonrasında ana menü.
-class _InitialRoute extends StatefulWidget {
-  const _InitialRoute();
+class InitialRouteScreen extends StatefulWidget {
+  const InitialRouteScreen({super.key});
 
   @override
-  State<_InitialRoute> createState() => _InitialRouteState();
+  State<InitialRouteScreen> createState() => _InitialRouteState();
 }
 
-class _InitialRouteState extends State<_InitialRoute> {
+class _InitialRouteState extends State<InitialRouteScreen> {
   Widget? _screen;
 
   @override
@@ -192,14 +199,26 @@ class _InitialRouteState extends State<_InitialRoute> {
   }
 
   Future<void> _resolveStartScreen() async {
+    final authUser = AuthService.instance.currentUser;
+    if (authUser == null) {
+      if (!mounted) return;
+      setState(() => _screen = const AuthScreen());
+      return;
+    }
+
     await PlayerService.instance.syncFromCloudIfSignedIn();
+    final player = await PlayerService.instance.loadPlayer();
     final isFirstTime = await StorageService.instance.isFirstTime();
     if (!mounted) return;
 
     setState(() {
-      _screen = isFirstTime
-          ? const PermissionsScreen()
-          : const HomeScreen();
+      if (isFirstTime) {
+        _screen = const PermissionsScreen();
+      } else if (!player.hasChosenClass) {
+        _screen = const ClassSelectionScreen();
+      } else {
+        _screen = const HomeScreen();
+      }
     });
   }
 

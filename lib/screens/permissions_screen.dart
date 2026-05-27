@@ -4,7 +4,6 @@ import 'package:permission_handler/permission_handler.dart';
 
 import '../services/storage_service.dart';
 import '../theme/quest_theme.dart';
-import 'home_screen.dart';
 
 /// İlk açılışta batarya ve arka plan izinlerini toplayan retro RPG kurulum ekranı.
 class PermissionsScreen extends StatefulWidget {
@@ -91,9 +90,7 @@ class _PermissionsScreenState extends State<PermissionsScreen>
     await StorageService.instance.completePermissionsSetup();
     if (!mounted) return;
 
-    Navigator.of(context).pushReplacement(
-      MaterialPageRoute<void>(builder: (_) => const HomeScreen()),
-    );
+    Navigator.of(context).pushReplacementNamed('/initial');
   }
 
   @override

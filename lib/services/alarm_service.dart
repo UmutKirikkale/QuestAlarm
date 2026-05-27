@@ -12,6 +12,7 @@ import 'package:flutter_local_notifications/flutter_local_notifications.dart';
 import 'package:flutter_timezone/flutter_timezone.dart';
 import 'package:permission_handler/permission_handler.dart';
 import 'package:shared_preferences/shared_preferences.dart';
+import 'app_settings_service.dart';
 import 'analytics_service.dart';
 import '../models/battle_summary.dart';
 import 'battle_summary_service.dart';
@@ -449,6 +450,8 @@ class AlarmService {
 
   /// 8-bit alarm sesini döngüde çalar (asset yoksa sistem sesi).
   Future<void> playAlarmSound() async {
+    final settings = await AppSettingsService.instance.loadSettings();
+    if (!settings.soundEnabled) return;
     if (_isPlaying) return;
     _isPlaying = true;
 

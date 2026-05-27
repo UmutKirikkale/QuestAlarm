@@ -15,8 +15,8 @@ class RetroWindow extends StatelessWidget {
   final EdgeInsets padding;
   final bool useGradient;
 
-  static const _outerBorder = Color(0xFFF0F0F0);
-  static const _innerBorder = Color(0xFF707080);
+  static const _outerBorder = Color(0xFF39FF14);
+  static const _innerBorder = Color(0xFF0FAE00);
   static const _gradientTop = Color(0xFF0A1428);
   static const _gradientBottom = Color(0xFF1C2E52);
 
@@ -33,6 +33,12 @@ class RetroWindow extends StatelessWidget {
                 color: Colors.black87,
                 offset: Offset(4, 4),
                 blurRadius: 0,
+              ),
+              BoxShadow(
+                color: Color(0x8839FF14),
+                offset: Offset(0, 0),
+                blurRadius: 10,
+                spreadRadius: 1,
               ),
             ],
           ),
@@ -72,7 +78,7 @@ class _RetroWindowCornerPainter extends CustomPainter {
   @override
   void paint(Canvas canvas, Size size) {
     const pixel = 3.0;
-    const color = Color(0xFFD8D8E8);
+    const color = Color(0xFFB9FFAE);
 
     final paint = Paint()
       ..color = color

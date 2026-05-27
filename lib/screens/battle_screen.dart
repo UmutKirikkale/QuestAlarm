@@ -11,6 +11,7 @@ import '../models/monster.dart';
 import '../models/battle_summary.dart';
 import '../models/player.dart';
 import '../services/analytics_service.dart';
+import '../services/app_settings_service.dart';
 import '../services/battle_summary_service.dart';
 import '../services/player_service.dart';
 import '../services/widget_service.dart';
@@ -65,6 +66,8 @@ class _BattleScreenState extends State<BattleScreen> {
   int _equippedWeaponDamage = 0;
   double _criticalChance = 0.0;
   bool _isMage = false;
+  bool _soundEnabled = true;
+  bool _hapticEnabled = true;
   _RuneShape _currentRune = _RuneShape.z;
   final List<Offset> _drawnRunePoints = [];
   Size _runeAreaSize = const Size(1, 1);
@@ -108,6 +111,13 @@ class _BattleScreenState extends State<BattleScreen> {
       if (_isMage) {
         _currentRune = _RuneShape.values[_random.nextInt(_RuneShape.values.length)];
       }
+    });
+
+    final settings = await AppSettingsService.instance.loadSettings();
+    if (!mounted) return;
+    setState(() {
+      _soundEnabled = settings.soundEnabled;
+      _hapticEnabled = settings.hapticEnabled;
     });
 
     if (!_isMage) {
@@ -161,6 +171,7 @@ class _BattleScreenState extends State<BattleScreen> {
   }
 
   Future<void> _triggerHeavyHaptic() async {
+    if (!_hapticEnabled) return;
     try {
       if (await Haptics.canVibrate()) {
         await Haptics.vibrate(HapticsType.heavy);
@@ -171,6 +182,7 @@ class _BattleScreenState extends State<BattleScreen> {
   }
 
   Future<void> _triggerCriticalHaptic() async {
+    if (!_hapticEnabled) return;
     try {
       if (await Haptics.canVibrate()) {
         await Haptics.vibrate(HapticsType.heavy);
@@ -183,6 +195,7 @@ class _BattleScreenState extends State<BattleScreen> {
   }
 
   Future<void> _playHitSound({double playbackRate = 1.0}) async {
+    if (!_soundEnabled) return;
     try {
       await _hitPlayer.stop();
       await _hitPlayer.setPlaybackRate(playbackRate);

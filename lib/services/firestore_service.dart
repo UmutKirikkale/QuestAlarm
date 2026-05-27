@@ -50,4 +50,8 @@ class FirestoreService {
     }
     return null;
   }
+
+  Future<void> deleteUserData(String uid) async {
+    await _firestore.collection('users').doc(uid).delete();
+  }
 }

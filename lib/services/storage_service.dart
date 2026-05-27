@@ -59,4 +59,10 @@ class StorageService {
     final prefs = await SharedPreferences.getInstance();
     return prefs.getInt(_keyPlayerUpdatedAt) ?? 0;
   }
+
+  Future<void> resetPlayerProgress() async {
+    final prefs = await SharedPreferences.getInstance();
+    await prefs.remove(_keyPlayer);
+    await prefs.remove(_keyPlayerUpdatedAt);
+  }
 }

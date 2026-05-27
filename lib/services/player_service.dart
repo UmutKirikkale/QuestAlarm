@@ -242,6 +242,42 @@ class PlayerService {
     await _save(player.copyWith(characterClass: characterClass));
   }
 
+  Future<void> initializeProfileForNewUser() async {
+    final initial = Player.initial(hasChosenClass: false);
+    final timestamp = DateTime.now().millisecondsSinceEpoch;
+    _cached = initial;
+    await StorageService.instance.savePlayerWithTimestamp(initial, timestamp);
+    final uid = AuthService.instance.currentUser?.uid;
+    if (uid != null) {
+      await FirestoreService.instance.savePlayerData(
+        uid,
+        initial,
+        updatedAtMs: timestamp,
+      );
+    }
+  }
+
+  Future<void> chooseCharacterClassOnce(CharacterClass characterClass) async {
+    final player = await loadPlayer();
+    if (player.hasChosenClass) return;
+    await _save(
+      player.copyWith(
+        characterClass: characterClass,
+        hasChosenClass: true,
+      ),
+    );
+  }
+
+  Future<void> resetAccountProgress() async {
+    final uid = AuthService.instance.currentUser?.uid;
+    if (uid != null) {
+      await FirestoreService.instance.deleteUserData(uid);
+    }
+    final resetPlayer = Player.initial(hasChosenClass: false);
+    _cached = resetPlayer;
+    await StorageService.instance.savePlayer(resetPlayer);
+  }
+
   /// Mağazadan eşya satın alır ve kuşanır / kullanır.
   Future<PurchaseResult> purchaseItem(Item item) async {
     final player = await loadPlayer();

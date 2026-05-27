@@ -1,6 +1,5 @@
 import 'dart:async';
 
-import 'package:firebase_auth/firebase_auth.dart';
 import 'package:flutter/material.dart';
 
 import '../models/player.dart';
@@ -14,6 +13,7 @@ import '../widgets/character_profile_panel.dart';
 import '../widgets/retro_arcade_button.dart';
 import '../widgets/retro_stat_bar.dart';
 import '../widgets/retro_window.dart';
+import 'settings_screen.dart';
 import 'shop_screen.dart';
 
 /// Uygulamanın ana menüsü — JRPG tarzı üç panelli oyun arayüzü.
@@ -26,9 +26,7 @@ class HomeScreen extends StatefulWidget {
 
 class _HomeScreenState extends State<HomeScreen> with WidgetsBindingObserver {
   Player? _player;
-  User? _currentUser;
   bool _loading = true;
-  bool _isSigningIn = false;
 
   @override
   void initState() {
@@ -56,35 +54,8 @@ class _HomeScreenState extends State<HomeScreen> with WidgetsBindingObserver {
     if (!mounted) return;
     setState(() {
       _player = player;
-      _currentUser = AuthService.instance.currentUser;
       _loading = false;
     });
-  }
-
-  Future<void> _signInForCloudBackup() async {
-    if (_isSigningIn) return;
-    setState(() => _isSigningIn = true);
-    try {
-      final credential = await AuthService.instance.signInWithGoogle();
-      if (credential?.user != null) {
-        await PlayerService.instance.syncFromCloudIfSignedIn();
-      }
-      if (!mounted) return;
-      await _loadPlayer();
-    } catch (e) {
-      if (!mounted) return;
-      ScaffoldMessenger.of(context).showSnackBar(
-        SnackBar(
-          content: Text(
-            'Google giriş başarısız: $e',
-            style: const TextStyle(fontFamily: 'monospace', fontSize: 12),
-          ),
-          backgroundColor: QuestTheme.error,
-        ),
-      );
-    } finally {
-      if (mounted) setState(() => _isSigningIn = false);
-    }
   }
 
   Future<void> _openShop() async {
@@ -92,13 +63,6 @@ class _HomeScreenState extends State<HomeScreen> with WidgetsBindingObserver {
       context,
       MaterialPageRoute<void>(builder: (_) => const ShopScreen()),
     );
-    await _loadPlayer();
-  }
-
-  Future<void> _setCharacterClass(CharacterClass characterClass) async {
-    final current = _player;
-    if (current == null || current.characterClass == characterClass) return;
-    await PlayerService.instance.setCharacterClass(characterClass);
     await _loadPlayer();
   }
 
@@ -117,6 +81,60 @@ class _HomeScreenState extends State<HomeScreen> with WidgetsBindingObserver {
     final stage = _stageForLevel(player.level);
 
     return Scaffold(
+      appBar: AppBar(
+        title: const Text('DASHBOARD'),
+        leading: Builder(
+          builder: (context) => IconButton(
+            icon: const Icon(Icons.menu),
+            onPressed: () => Scaffold.of(context).openDrawer(),
+          ),
+        ),
+      ),
+      drawer: Drawer(
+        backgroundColor: QuestTheme.surface,
+        child: SafeArea(
+          child: ListView(
+            padding: const EdgeInsets.symmetric(vertical: 8),
+            children: [
+              ListTile(
+                leading: const Text('🏪'),
+                title: const Text('Mağaza'),
+                onTap: () async {
+                  Navigator.pop(context);
+                  await _openShop();
+                },
+              ),
+              ListTile(
+                leading: const Text('⚙️'),
+                title: const Text('Ayarlar'),
+                onTap: () {
+                  Navigator.pop(context);
+                  Navigator.push<void>(
+                    context,
+                    MaterialPageRoute<void>(
+                      builder: (_) => const SettingsScreen(),
+                    ),
+                  );
+                },
+              ),
+              const Divider(),
+              ListTile(
+                leading: const Icon(Icons.logout, color: QuestTheme.error),
+                title: const Text('Çıkış Yap'),
+                onTap: () async {
+                  Navigator.pop(context);
+                  await AuthService.instance.signOut();
+                  if (!context.mounted) return;
+                  Navigator.of(context).pushNamedAndRemoveUntil(
+                    '/auth',
+                    (route) => false,
+                  );
+                },
+              ),
+            ],
+          ),
+        ),
+      ),
       backgroundColor: QuestTheme.background,
       body: DecoratedBox(
         decoration: BoxDecoration(
@@ -139,17 +157,6 @@ class _HomeScreenState extends State<HomeScreen> with WidgetsBindingObserver {
                 Expanded(
                   flex: 44,
                   child: CharacterProfilePanel(player: player),
-                ),
-                const SizedBox(height: 12),
-                _ClassSelectPanel(
-                  selectedClass: player.characterClass,
-                  onChanged: _setCharacterClass,
-                ),
-                const SizedBox(height: 12),
-                _CloudSyncPanel(
-                  user: _currentUser,
-                  isSigningIn: _isSigningIn,
-                  onSignIn: _signInForCloudBackup,
                 ),
                 const SizedBox(height: 12),
                 Expanded(
@@ -288,129 +295,6 @@ class _StageInfo {
 
   final String title;
   final List<Color> backgroundGradient;
-}
-
-class _CloudSyncPanel extends StatelessWidget {
-  const _CloudSyncPanel({
-    required this.user,
-    required this.isSigningIn,
-    required this.onSignIn,
-  });
-
-  final User? user;
-  final bool isSigningIn;
-  final VoidCallback onSignIn;
-
-  @override
-  Widget build(BuildContext context) {
-    return RetroWindow(
-      padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 10),
-      child: user == null
-          ? RetroArcadeButton(
-              label: isSigningIn
-                  ? 'GIRIS YAPILIYOR...'
-                  : 'BULUTA YEDEKLE (Google ile Giris)',
-              icon: '☁️',
-              backgroundColor: const Color(0xFF2D3D5A),
-              foregroundColor: QuestTheme.secondary,
-              onPressed: onSignIn,
-            )
-          : Row(
-              mainAxisAlignment: MainAxisAlignment.center,
-              children: [
-                const Text('☁️', style: TextStyle(fontSize: 18)),
-                const SizedBox(width: 8),
-                Text(
-                  'Veriler Bulutla Senkronize',
-                  style: pixelTextStyle(
-                    fontSize: 12,
-                    color: const Color(0xFF8BE9FD),
-                  ),
-                ),
-              ],
-            ),
-    );
-  }
-}
-
-class _ClassSelectPanel extends StatelessWidget {
-  const _ClassSelectPanel({
-    required this.selectedClass,
-    required this.onChanged,
-  });
-
-  final CharacterClass selectedClass;
-  final ValueChanged<CharacterClass> onChanged;
-
-  @override
-  Widget build(BuildContext context) {
-    return RetroWindow(
-      padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 10),
-      child: Column(
-        crossAxisAlignment: CrossAxisAlignment.stretch,
-        children: [
-          Text(
-            'SINIF SECIMI',
-            textAlign: TextAlign.center,
-            style: pixelTextStyle(
-              fontSize: 11,
-              color: QuestTheme.onSurfaceMuted,
-              letterSpacing: 2,
-            ),
-          ),
-          const SizedBox(height: 8),
-          Row(
-            children: [
-              Expanded(
-                child: _ClassChoiceButton(
-                  label: 'SAVASCI',
-                  icon: '⚔️',
-                  selected: selectedClass == CharacterClass.warrior,
-                  onPressed: () => onChanged(CharacterClass.warrior),
-                ),
-              ),
-              const SizedBox(width: 8),
-              Expanded(
-                child: _ClassChoiceButton(
-                  label: 'BUYUCU',
-                  icon: '🪄',
-                  selected: selectedClass == CharacterClass.mage,
-                  onPressed: () => onChanged(CharacterClass.mage),
-                ),
-              ),
-            ],
-          ),
-        ],
-      ),
-    );
-  }
-}
-
-class _ClassChoiceButton extends StatelessWidget {
-  const _ClassChoiceButton({
-    required this.label,
-    required this.icon,
-    required this.selected,
-    required this.onPressed,
-  });
-
-  final String label;
-  final String icon;
-  final bool selected;
-  final VoidCallback onPressed;
-
-  @override
-  Widget build(BuildContext context) {
-    return RetroArcadeButton(
-      label: label,
-      icon: icon,
-      height: 42,
-      fontSize: 11,
-      backgroundColor: selected ? QuestTheme.primary : const Color(0xFF2D3D5A),
-      foregroundColor: selected ? QuestTheme.background : QuestTheme.onBackground,
-      onPressed: onPressed,
-    );
-  }
 }
 
 /// Alev ikonlu seri rozeti.
