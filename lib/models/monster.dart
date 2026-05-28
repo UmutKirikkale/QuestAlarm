@@ -1,5 +1,7 @@
 import 'dart:math';
 
+import 'game_monster_definition.dart';
+
 /// Alarm savaşında kullanılacak canavar modeli.
 class Monster {
   const Monster({
@@ -179,6 +181,18 @@ class Monster {
       imagePath: 'assets/images/monsters/insomniac_lich.png',
     ),
   ];
+
+  factory Monster.fromDefinition(GameMonsterDefinition def) {
+    return Monster(
+      name: def.name,
+      maxHP: def.hp,
+      currentHP: def.hp,
+      rewardGold: def.rewardGold,
+      rewardXP: def.rewardXp,
+      imagePath: def.imagePath,
+      isBoss: def.isBoss,
+    );
+  }
 
   static Monster forPlayerLevel(int level, Random random) {
     if (DateTime.now().weekday == DateTime.sunday) {

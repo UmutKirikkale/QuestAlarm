@@ -4,6 +4,7 @@ import '../models/equipped_item.dart';
 import '../models/player.dart';
 import '../theme/pixel_text.dart';
 import '../theme/quest_theme.dart';
+import 'live_currency_display.dart';
 import 'retro_window.dart';
 
 /// Orta panel — sınıfa göre avatar silüeti ve ekipman durumu.
@@ -34,6 +35,12 @@ class CharacterProfilePanel extends StatelessWidget {
             child: Center(
               child: _ClassAvatar(characterClass: player.characterClass),
             ),
+          ),
+          const SizedBox(height: 8),
+          LiveCurrencyDisplay(
+            fallbackGold: player.gold,
+            fallbackDiamonds: player.diamonds,
+            compact: true,
           ),
           const SizedBox(height: 8),
           _EquipmentStatus(weapon: player.equippedWeapon),

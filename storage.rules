@@ -1,0 +1,20 @@
+rules_version = '2';
+
+// Geliştirme: items/ ve maps/ için yükleme (admin CMS).
+// Canlıya çıkmadan önce yazmayı auth ile kısıtlayın.
+service firebase.storage {
+  match /b/{bucket}/o {
+    match /items/{fileName} {
+      allow read: if true;
+      allow write: if true;
+    }
+    match /maps/{fileName} {
+      allow read: if true;
+      allow write: if true;
+    }
+    match /{allPaths=**} {
+      allow read: if true;
+      allow write: if false;
+    }
+  }
+}

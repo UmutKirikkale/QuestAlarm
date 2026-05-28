@@ -2,9 +2,15 @@ import 'dart:async';
 
 import 'package:flutter/material.dart';
 
+import '../models/equipped_item.dart';
 import '../models/item.dart';
+import '../models/shop_currency.dart';
 import '../services/analytics_service.dart';
+import '../services/global_settings_service.dart';
+import '../services/live_log_service.dart';
+import '../services/game_content_service.dart';
 import '../services/player_service.dart';
+import 'diamond_shop_screen.dart';
 import '../theme/pixel_text.dart';
 import '../theme/quest_theme.dart';
 import '../widgets/pixel_asset_image.dart';
@@ -22,103 +28,12 @@ class ShopScreen extends StatefulWidget {
 
 class _ShopScreenState extends State<ShopScreen> {
   int _gold = 0;
+  int _diamonds = 0;
   int _playerLevel = 1;
+  EquippedItem? _weapon;
+  EquippedItem? _armor;
+  bool _isPro = false;
   bool _loading = true;
-
-  static const List<Item> _shopItems = [
-    Item(
-      id: 'rusty_sword',
-      name: 'Paslı Kılıç',
-      price: 50,
-      bonusDamage: 10,
-      itemType: ItemType.weapon,
-      rarity: ItemRarity.common,
-      requiredLevel: 1,
-      criticalChance: 0.05,
-      imagePath: 'assets/images/items/sword.png',
-    ),
-    Item(
-      id: 'iron_armor',
-      name: 'Demir Zırh',
-      price: 100,
-      bonusDefense: 5,
-      itemType: ItemType.armor,
-      rarity: ItemRarity.common,
-      requiredLevel: 2,
-      imagePath: 'assets/images/items/iron_armor.png',
-    ),
-    Item(
-      id: 'health_potion',
-      name: 'Can İksiri',
-      price: 20,
-      itemType: ItemType.potion,
-      rarity: ItemRarity.common,
-      requiredLevel: 1,
-      imagePath: 'assets/images/items/health_potion.png',
-    ),
-    Item(
-      id: 'steel_blade',
-      name: 'Çelik Bıçak',
-      price: 120,
-      bonusDamage: 18,
-      itemType: ItemType.weapon,
-      rarity: ItemRarity.rare,
-      requiredLevel: 3,
-      criticalChance: 0.12,
-      imagePath: 'assets/images/items/steel_blade.png',
-    ),
-    Item(
-      id: 'moon_katana',
-      name: 'Ay Katanası',
-      price: 170,
-      bonusDamage: 26,
-      itemType: ItemType.weapon,
-      rarity: ItemRarity.epic,
-      requiredLevel: 5,
-      criticalChance: 0.25,
-      imagePath: 'assets/images/items/steel_blade.png',
-    ),
-    Item(
-      id: 'titan_mail',
-      name: 'Titan Zırhı',
-      price: 200,
-      bonusDefense: 14,
-      itemType: ItemType.armor,
-      rarity: ItemRarity.epic,
-      requiredLevel: 6,
-      imagePath: 'assets/images/items/iron_armor.png',
-    ),
-    Item(
-      id: 'elixir',
-      name: 'Büyük İksir',
-      price: 75,
-      itemType: ItemType.potion,
-      rarity: ItemRarity.rare,
-      requiredLevel: 4,
-      imagePath: 'assets/images/items/health_potion.png',
-    ),
-    Item(
-      id: 'storm_spear',
-      name: 'Fırtına Mızrağı',
-      price: 240,
-      bonusDamage: 34,
-      itemType: ItemType.weapon,
-      rarity: ItemRarity.legendary,
-      requiredLevel: 8,
-      criticalChance: 0.25,
-      imagePath: 'assets/images/items/sword.png',
-    ),
-    Item(
-      id: 'shadow_cloak',
-      name: 'Gölge Pelerini',
-      price: 155,
-      bonusDefense: 11,
-      itemType: ItemType.armor,
-      rarity: ItemRarity.rare,
-      requiredLevel: 4,
-      imagePath: 'assets/images/items/iron_armor.png',
-    ),
-  ];
 
   @override
   void initState() {
@@ -131,9 +46,38 @@ class _ShopScreenState extends State<ShopScreen> {
     if (!mounted) return;
     setState(() {
       _gold = player.gold;
+      _diamonds = player.diamonds;
       _playerLevel = player.level;
+      _weapon = player.equippedWeapon;
+      _armor = player.equippedArmor;
+      _isPro = player.isPro;
       _loading = false;
     });
+  }
+
+  Future<void> _repairEquipment({required bool weapon}) async {
+    final result =
+        await PlayerService.instance.repairEquipment(repairWeapon: weapon);
+    if (!result.success) {
+      final msg = switch (result.failure) {
+        PurchaseFailure.insufficientGold => 'Tamir için yetersiz altın!',
+        PurchaseFailure.nothingToRepair => 'Tamir gerekmiyor.',
+        _ => 'Tamir başarısız',
+      };
+      if (!mounted) return;
+      ScaffoldMessenger.of(context).showSnackBar(
+        SnackBar(
+          content: Text(msg, style: const TextStyle(fontFamily: 'monospace')),
+          backgroundColor: QuestTheme.error,
+        ),
+      );
+      return;
+    }
+    await _loadGold();
+    if (!mounted) return;
+    ScaffoldMessenger.of(context).showSnackBar(
+      const SnackBar(content: Text('Ekipman tamir edildi!')),
+    );
   }
 
   Future<void> _buyItem(Item item) async {
@@ -143,7 +87,9 @@ class _ShopScreenState extends State<ShopScreen> {
         PurchaseFailure.levelTooLow =>
           'Seviye yetersiz! (Gerekli: Lv ${item.requiredLevel})',
         PurchaseFailure.insufficientGold =>
-          'Yetersiz altın! (${item.price} G gerekli)',
+          'Yetersiz altın! (${item.shopCurrency.formatPrice(item.price)} gerekli)',
+        PurchaseFailure.insufficientDiamonds =>
+          'Yetersiz elmas! (${item.shopCurrency.formatPrice(item.price)} gerekli)',
         _ => 'Satın alma başarısız',
       };
       if (!mounted) return;
@@ -162,6 +108,7 @@ class _ShopScreenState extends State<ShopScreen> {
     final player = await PlayerService.instance.loadPlayer();
     setState(() {
       _gold = player.gold;
+      _diamonds = player.diamonds;
       _playerLevel = player.level;
     });
 
@@ -171,6 +118,7 @@ class _ShopScreenState extends State<ShopScreen> {
         price: item.price,
       ),
     );
+    unawaited(LiveLogService.instance.logItemPurchased(itemName: item.name));
 
     if (!mounted) return;
     ScaffoldMessenger.of(context).showSnackBar(
@@ -216,24 +164,232 @@ class _ShopScreenState extends State<ShopScreen> {
               crossAxisAlignment: CrossAxisAlignment.stretch,
               children: [
                 _ShopHeader(gold: _gold),
+                const SizedBox(height: 8),
+                _DiamondBanner(
+                  diamonds: _diamonds,
+                  onTap: () async {
+                    await Navigator.push<void>(
+                      context,
+                      MaterialPageRoute<void>(
+                        builder: (_) => const DiamondShopScreen(),
+                      ),
+                    );
+                    await _loadGold();
+                  },
+                ),
+                const SizedBox(height: 12),
+                StreamBuilder(
+                  stream: GlobalSettingsService.instance.watchSettings(),
+                  builder: (context, _) {
+                    return _RepairPanel(
+                      weapon: _weapon,
+                      armor: _armor,
+                      gold: _gold,
+                      isPro: _isPro,
+                      onRepairWeapon: () => _repairEquipment(weapon: true),
+                      onRepairArmor: () => _repairEquipment(weapon: false),
+                    );
+                  },
+                ),
                 const SizedBox(height: 12),
                 Expanded(
-                  child: ListView.builder(
-                    itemCount: _shopItems.length,
-                    itemBuilder: (context, index) {
-                      return Padding(
-                        padding: const EdgeInsets.only(bottom: 12),
-                        child: _ShopItemCard(
-                          item: _shopItems[index],
-                          playerLevel: _playerLevel,
-                          onBuy: () => _buyItem(_shopItems[index]),
-                        ),
+                  child: StreamBuilder<List<Item>>(
+                    stream: GameContentService.instance.watchShopItems(),
+                    builder: (context, snapshot) {
+                      if (snapshot.hasError) {
+                        return Center(
+                          child: Text(
+                            'Mağaza yüklenemedi.\n${snapshot.error}',
+                            style: pixelTextStyle(
+                              fontSize: 12,
+                              color: QuestTheme.error,
+                            ),
+                            textAlign: TextAlign.center,
+                          ),
+                        );
+                      }
+                      if (!snapshot.hasData) {
+                        return const Center(
+                          child: CircularProgressIndicator(
+                            color: QuestTheme.primary,
+                          ),
+                        );
+                      }
+                      final items = snapshot.data!;
+                      return ListView.builder(
+                        itemCount: items.length,
+                        itemBuilder: (context, index) {
+                          final item = items[index];
+                          return Padding(
+                            padding: const EdgeInsets.only(bottom: 12),
+                            child: _ShopItemCard(
+                              item: item,
+                              playerLevel: _playerLevel,
+                              onBuy: () => _buyItem(item),
+                            ),
+                          );
+                        },
                       );
                     },
                   ),
                 ),
               ],
             ),
+          ),
+        ),
+      ),
+    );
+  }
+}
+
+class _RepairPanel extends StatelessWidget {
+  const _RepairPanel({
+    required this.weapon,
+    required this.armor,
+    required this.gold,
+    required this.isPro,
+    required this.onRepairWeapon,
+    required this.onRepairArmor,
+  });
+
+  final EquippedItem? weapon;
+  final EquippedItem? armor;
+  final int gold;
+  final bool isPro;
+  final VoidCallback onRepairWeapon;
+  final VoidCallback onRepairArmor;
+
+  @override
+  Widget build(BuildContext context) {
+    final ps = PlayerService.instance;
+    final weaponCost = ps.repairCostForEquipped(weapon, isPro: isPro);
+    final armorCost = ps.repairCostForEquipped(armor, isPro: isPro);
+
+    if (weapon == null && armor == null) return const SizedBox.shrink();
+    if (weaponCost <= 0 && armorCost <= 0) return const SizedBox.shrink();
+
+    return RetroWindow(
+      padding: const EdgeInsets.all(12),
+      child: Column(
+        crossAxisAlignment: CrossAxisAlignment.stretch,
+        children: [
+          Text(
+            '🔧 TAMİRHANE',
+            style: pixelTextStyle(fontSize: 12, color: QuestTheme.primary),
+          ),
+          const SizedBox(height: 8),
+          if (weapon != null && weaponCost > 0)
+            _RepairRow(
+              label: '⚔ ${weapon!.item.name} (%${weapon!.durability})',
+              cost: weaponCost,
+              canAfford: gold >= weaponCost,
+              onRepair: onRepairWeapon,
+            ),
+          if (armor != null && armorCost > 0) ...[
+            if (weapon != null && weaponCost > 0) const SizedBox(height: 8),
+            _RepairRow(
+              label: '🛡 Zırh (%${armor!.durability})',
+              cost: armorCost,
+              canAfford: gold >= armorCost,
+              onRepair: onRepairArmor,
+            ),
+          ],
+        ],
+      ),
+    );
+  }
+}
+
+class _RepairRow extends StatelessWidget {
+  const _RepairRow({
+    required this.label,
+    required this.cost,
+    required this.canAfford,
+    required this.onRepair,
+  });
+
+  final String label;
+  final int cost;
+  final bool canAfford;
+  final VoidCallback onRepair;
+
+  @override
+  Widget build(BuildContext context) {
+    return Row(
+      children: [
+        Expanded(
+          child: Text(
+            label,
+            style: pixelTextStyle(fontSize: 11),
+            overflow: TextOverflow.ellipsis,
+          ),
+        ),
+        Text(
+          '$cost G',
+          style: pixelTextStyle(
+            fontSize: 11,
+            color: canAfford ? QuestTheme.secondary : QuestTheme.error,
+          ),
+        ),
+        const SizedBox(width: 8),
+        SizedBox(
+          width: 72,
+          height: 36,
+          child: RetroArcadeButton(
+            label: 'TAMİR',
+            height: 36,
+            fontSize: 10,
+            onPressed: canAfford ? onRepair : () {},
+            backgroundColor:
+                canAfford ? QuestTheme.primary : QuestTheme.surfaceVariant,
+            foregroundColor:
+                canAfford ? QuestTheme.background : QuestTheme.onSurfaceMuted,
+          ),
+        ),
+      ],
+    );
+  }
+}
+
+class _DiamondBanner extends StatelessWidget {
+  const _DiamondBanner({
+    required this.diamonds,
+    required this.onTap,
+  });
+
+  final int diamonds;
+  final VoidCallback onTap;
+
+  @override
+  Widget build(BuildContext context) {
+    return Material(
+      color: const Color(0xFF0D1A33),
+      borderRadius: BorderRadius.circular(4),
+      child: InkWell(
+        onTap: onTap,
+        child: Padding(
+          padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 10),
+          child: Row(
+            children: [
+              const Text('💎', style: TextStyle(fontSize: 22)),
+              const SizedBox(width: 10),
+              Expanded(
+                child: Text(
+                  'ELMAS: $diamonds',
+                  style: pixelTextStyle(
+                    fontSize: 13,
+                    color: const Color(0xFF4FB2FF),
+                  ),
+                ),
+              ),
+              Text(
+                'ELMAS MAĞAZASI →',
+                style: pixelTextStyle(
+                  fontSize: 10,
+                  color: QuestTheme.onSurfaceMuted,
+                ),
+              ),
+            ],
           ),
         ),
       ),
@@ -329,10 +485,12 @@ class _ShopItemCard extends StatelessWidget {
                 ),
                 const SizedBox(height: 2),
                 Text(
-                  '${item.price} G',
+                  item.shopCurrency.formatPrice(item.price),
                   style: pixelTextStyle(
                     fontSize: 11,
-                    color: QuestTheme.secondary,
+                    color: item.shopCurrency == ShopCurrency.diamond
+                        ? const Color(0xFF88DDFF)
+                        : QuestTheme.secondary,
                   ),
                 ),
               ],

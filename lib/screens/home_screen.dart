@@ -9,12 +9,20 @@ import '../services/auth_service.dart';
 import '../services/player_service.dart';
 import '../theme/pixel_text.dart';
 import '../theme/quest_theme.dart';
+import '../services/user_document_sync_service.dart';
 import '../widgets/character_profile_panel.dart';
+import '../widgets/daily_quest_ticker.dart';
 import '../widgets/retro_arcade_button.dart';
 import '../widgets/retro_stat_bar.dart';
 import '../widgets/retro_window.dart';
 import 'settings_screen.dart';
+import 'diamond_shop_screen.dart';
+import 'events_screen.dart';
+import 'leaderboard_screen.dart';
+import 'map_selection_screen.dart';
+import 'pro_upgrade_screen.dart';
 import 'shop_screen.dart';
+import '../widgets/mock_ad_banner.dart';
 
 /// Uygulamanın ana menüsü — JRPG tarzı üç panelli oyun arayüzü.
 class HomeScreen extends StatefulWidget {
@@ -27,18 +35,31 @@ class HomeScreen extends StatefulWidget {
 class _HomeScreenState extends State<HomeScreen> with WidgetsBindingObserver {
   Player? _player;
   bool _loading = true;
+  StreamSubscription<UserDocumentSnapshot>? _cloudPlayerSub;
 
   @override
   void initState() {
     super.initState();
     WidgetsBinding.instance.addObserver(this);
     unawaited(_loadPlayer());
+    _cloudPlayerSub = UserDocumentSyncService.instance.stream.listen(
+      (snap) => _onCloudPlayerUpdate(snap),
+    );
   }
 
   @override
   void dispose() {
     WidgetsBinding.instance.removeObserver(this);
+    _cloudPlayerSub?.cancel();
     super.dispose();
+  }
+
+  Future<void> _onCloudPlayerUpdate(UserDocumentSnapshot snap) async {
+    if (snap.player == null) return;
+    await PlayerService.instance.mergeFromCloudIfNewer(snap);
+    if (!mounted) return;
+    final player = await PlayerService.instance.loadPlayer();
+    setState(() => _player = player);
   }
 
   @override
@@ -105,6 +126,73 @@ class _HomeScreenState extends State<HomeScreen> with WidgetsBindingObserver {
                 },
               ),
               ListTile(
+                leading: Text(player.isPro ? '👑' : '⭐'),
+                title: Text(player.isPro ? 'Pro Üyelik (Aktif)' : 'Pro Sürüme Geç'),
+                onTap: () async {
+                  Navigator.pop(context);
+                  await Navigator.push<void>(
+                    context,
+                    MaterialPageRoute<void>(
+                      builder: (_) => const ProUpgradeScreen(),
+                    ),
+                  );
+                  await _loadPlayer();
+                },
+              ),
+              ListTile(
+                leading: const Text('💎'),
+                title: const Text('Elmas Mağazası'),
+                onTap: () async {
+                  Navigator.pop(context);
+                  await Navigator.push<void>(
+                    context,
+                    MaterialPageRoute<void>(
+                      builder: (_) => const DiamondShopScreen(),
+                    ),
+                  );
+                  await _loadPlayer();
+                },
+              ),
+              ListTile(
+                leading: const Text('🏆'),
+                title: const Text('Liderlik Tablosu'),
+                onTap: () {
+                  Navigator.pop(context);
+                  Navigator.push<void>(
+                    context,
+                    MaterialPageRoute<void>(
+                      builder: (_) => const LeaderboardScreen(),
+                    ),
+                  );
+                },
+              ),
+              ListTile(
+                leading: const Text('🎯'),
+                title: const Text('Etkinlikler'),
+                onTap: () {
+                  Navigator.pop(context);
+                  Navigator.push<void>(
+                    context,
+                    MaterialPageRoute<void>(
+                      builder: (_) => const EventsScreen(),
+                    ),
+                  );
+                },
+              ),
+              ListTile(
+                leading: const Text('🗺️'),
+                title: const Text('Zindan Seç'),
+                onTap: () {
+                  Navigator.pop(context);
+                  Navigator.push<void>(
+                    context,
+                    MaterialPageRoute<void>(
+                      builder: (_) => const MapSelectionScreen(),
+                    ),
+                  );
+                },
+              ),
+              ListTile(
                 leading: const Text('⚙️'),
                 title: const Text('Ayarlar'),
                 onTap: () {
@@ -149,6 +237,7 @@ class _HomeScreenState extends State<HomeScreen> with WidgetsBindingObserver {
             padding: const EdgeInsets.all(16),
             child: Column(
               children: [
+                const DailyQuestTicker(),
                 Expanded(
                   flex: 26,
                   child: _TopStatusPanel(player: player, stageName: stage.title),
@@ -163,9 +252,9 @@ class _HomeScreenState extends State<HomeScreen> with WidgetsBindingObserver {
                   flex: 18,
                   child: _ActionPanel(
                     onScheduleAlarm: () => _scheduleAlarm(context),
-                    onOpenShop: _openShop,
                   ),
                 ),
+                MockAdBanner(isPro: player.isPro, compact: true),
               ],
             ),
           ),
@@ -204,54 +293,59 @@ class _TopStatusPanel extends StatelessWidget {
   @override
   Widget build(BuildContext context) {
     return RetroWindow(
-      padding: const EdgeInsets.fromLTRB(12, 10, 12, 10),
+      padding: const EdgeInsets.fromLTRB(10, 8, 10, 8),
       child: Column(
         crossAxisAlignment: CrossAxisAlignment.stretch,
         children: [
           Row(
             mainAxisAlignment: MainAxisAlignment.spaceBetween,
             children: [
-              Text(
-                'QUEST ALARM',
-                style: pixelTextStyle(
-                  fontSize: 13,
-                  color: QuestTheme.primary,
-                  letterSpacing: 2,
+              Flexible(
+                child: Text(
+                  'QUEST ALARM',
+                  style: pixelTextStyle(
+                    fontSize: 12,
+                    color: QuestTheme.primary,
+                    letterSpacing: 2,
+                  ),
+                  overflow: TextOverflow.ellipsis,
                 ),
               ),
               Text(
                 'LV ${player.level}',
                 style: pixelTextStyle(
-                  fontSize: 13,
+                  fontSize: 12,
                   color: QuestTheme.secondary,
                 ),
               ),
             ],
           ),
-          const SizedBox(height: 6),
+          const SizedBox(height: 4),
           Text(
             stageName,
             style: pixelTextStyle(
-              fontSize: 10,
+              fontSize: 9,
               color: const Color(0xFF8AB4FF),
-              letterSpacing: 1.5,
+              letterSpacing: 1,
             ),
+            maxLines: 1,
+            overflow: TextOverflow.ellipsis,
           ),
-          const SizedBox(height: 6),
+          const SizedBox(height: 4),
           Row(
             mainAxisAlignment: MainAxisAlignment.spaceBetween,
             children: [
               Text(
                 _classLabel(player.characterClass),
-                style: pixelTextStyle(fontSize: 11, color: QuestTheme.onSurfaceMuted),
+                style: pixelTextStyle(fontSize: 10, color: QuestTheme.onSurfaceMuted),
               ),
               _StreakBadge(streak: player.streak),
             ],
           ),
-          const SizedBox(height: 10),
+          const SizedBox(height: 6),
           Expanded(
             child: Column(
-              mainAxisAlignment: MainAxisAlignment.spaceEvenly,
+              mainAxisAlignment: MainAxisAlignment.center,
               children: [
                 RetroStatBar(
                   icon: '❤️',
@@ -261,15 +355,17 @@ class _TopStatusPanel extends StatelessWidget {
                   fillColor: const Color(0xFF39FF14),
                   fillColorLow: QuestTheme.error,
                   lowThreshold: 0.3,
+                  compact: true,
                 ),
+                const SizedBox(height: 4),
                 RetroStatBar(
                   icon: '⚡',
                   label: 'TECRÜBE (XP)',
                   current: player.currentXP,
                   max: player.nextLevelXP,
                   fillColor: const Color(0xFF4488FF),
+                  compact: true,
                 ),
-                RetroGoldCounter(gold: player.gold),
               ],
             ),
           ),
@@ -331,35 +427,20 @@ class _StreakBadge extends StatelessWidget {
 
 /// Alt aksiyon paneli — arcade butonları.
 class _ActionPanel extends StatelessWidget {
-  const _ActionPanel({
-    required this.onScheduleAlarm,
-    required this.onOpenShop,
-  });
+  const _ActionPanel({required this.onScheduleAlarm});
 
   final VoidCallback onScheduleAlarm;
-  final VoidCallback onOpenShop;
 
   @override
   Widget build(BuildContext context) {
     return RetroWindow(
       padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 14),
-      child: Column(
-        mainAxisAlignment: MainAxisAlignment.center,
-        children: [
-          RetroArcadeButton(
-            label: 'ALARM KUR',
-            icon: '⏰',
-            onPressed: onScheduleAlarm,
-          ),
-          const SizedBox(height: 14),
-          RetroArcadeButton(
-            label: 'MAĞAZA',
-            icon: '🏪',
-            backgroundColor: const Color(0xFF2A3550),
-            foregroundColor: QuestTheme.secondary,
-            onPressed: onOpenShop,
-          ),
-        ],
+      child: Center(
+        child: RetroArcadeButton(
+          label: 'ALARM KUR',
+          icon: '⏰',
+          onPressed: onScheduleAlarm,
+        ),
       ),
     );
   }

@@ -65,4 +65,13 @@ class AnalyticsService {
       debugPrint('AnalyticsService.logAlarmSnoozed: $e\n$stack');
     }
   }
+
+  /// Alarm kapatıldı ama oyuncu uyanıp savaşmadan geri uyuduğunda.
+  Future<void> logPlayerAmbushedWhileSleeping() async {
+    try {
+      await _analytics.logEvent(name: 'player_ambushed_while_sleeping');
+    } catch (e, stack) {
+      debugPrint('AnalyticsService.logPlayerAmbushedWhileSleeping: $e\n$stack');
+    }
+  }
 }

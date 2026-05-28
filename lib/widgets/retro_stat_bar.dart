@@ -15,6 +15,7 @@ class RetroStatBar extends StatelessWidget {
     this.fillColorLow,
     this.lowThreshold = 0.0,
     this.showFraction = true,
+    this.compact = false,
   });
 
   final String icon;
@@ -25,41 +26,47 @@ class RetroStatBar extends StatelessWidget {
   final Color? fillColorLow;
   final double lowThreshold;
   final bool showFraction;
+  final bool compact;
 
   @override
   Widget build(BuildContext context) {
     final ratio = max > 0 ? (current / max).clamp(0.0, 1.0) : 0.0;
     final isLow = fillColorLow != null && ratio <= lowThreshold;
     final activeFill = isLow ? fillColorLow! : fillColor;
+    final barHeight = compact ? 22.0 : 28.0;
+    final labelSize = compact ? 8.0 : 10.0;
+    final fractionSize = compact ? 9.0 : 11.0;
 
     return Column(
-      crossAxisAlignment: CrossAxisAlignment.start,
+      mainAxisSize: MainAxisSize.min,
+      crossAxisAlignment: CrossAxisAlignment.stretch,
       children: [
-        Text(
-          label,
-          style: pixelTextStyle(
-            fontSize: 10,
-            color: QuestTheme.onSurfaceMuted,
-            letterSpacing: 1.5,
+        if (!compact)
+          Text(
+            label,
+            style: pixelTextStyle(
+              fontSize: labelSize,
+              color: QuestTheme.onSurfaceMuted,
+              letterSpacing: 1.5,
+            ),
           ),
-        ),
-        const SizedBox(height: 4),
+        if (!compact) const SizedBox(height: 4),
         Container(
-          decoration: const BoxDecoration(
+          decoration: BoxDecoration(
             boxShadow: [
               BoxShadow(
                 color: Colors.black87,
-                offset: Offset(3, 3),
+                offset: Offset(compact ? 2 : 3, compact ? 2 : 3),
                 blurRadius: 0,
               ),
             ],
           ),
           child: Row(
             children: [
-              _StatIconBadge(icon: icon),
+              _StatIconBadge(icon: icon, height: barHeight),
               Expanded(
                 child: Container(
-                  height: 28,
+                  height: barHeight,
                   decoration: BoxDecoration(
                     color: const Color(0xFF0A0A12),
                     border: Border.all(color: Colors.white, width: 2),
@@ -84,7 +91,7 @@ class RetroStatBar extends StatelessWidget {
                           child: Text(
                             '$current / $max',
                             style: pixelTextStyle(
-                              fontSize: 11,
+                              fontSize: fractionSize,
                               color: Colors.white,
                               shadows: const [
                                 Shadow(
@@ -109,29 +116,31 @@ class RetroStatBar extends StatelessWidget {
 
 /// Altın sayacı — bar yerine kompakt retro satır.
 class RetroGoldCounter extends StatelessWidget {
-  const RetroGoldCounter({super.key, required this.gold});
+  const RetroGoldCounter({super.key, required this.gold, this.compact = false});
 
   final int gold;
+  final bool compact;
 
   @override
   Widget build(BuildContext context) {
+    final barHeight = compact ? 22.0 : 28.0;
     return Container(
-      decoration: const BoxDecoration(
+      decoration: BoxDecoration(
         boxShadow: [
           BoxShadow(
             color: Colors.black87,
-            offset: Offset(3, 3),
+            offset: Offset(compact ? 2 : 3, compact ? 2 : 3),
             blurRadius: 0,
           ),
         ],
       ),
       child: Row(
         children: [
-          const _StatIconBadge(icon: '🪙'),
+          _StatIconBadge(icon: '🪙', height: barHeight),
           Expanded(
             child: Container(
-              height: 28,
-              padding: const EdgeInsets.symmetric(horizontal: 10),
+              height: barHeight,
+              padding: EdgeInsets.symmetric(horizontal: compact ? 6 : 10),
               decoration: BoxDecoration(
                 gradient: const LinearGradient(
                   colors: [Color(0xFF3D3200), Color(0xFF5C4A00)],
@@ -142,7 +151,7 @@ class RetroGoldCounter extends StatelessWidget {
               child: Text(
                 '$gold G',
                 style: pixelTextStyle(
-                  fontSize: 14,
+                  fontSize: compact ? 11 : 14,
                   color: QuestTheme.secondary,
                   shadows: const [
                     Shadow(color: Color(0xFF3D2800), offset: Offset(1, 1)),
@@ -158,21 +167,22 @@ class RetroGoldCounter extends StatelessWidget {
 }
 
 class _StatIconBadge extends StatelessWidget {
-  const _StatIconBadge({required this.icon});
+  const _StatIconBadge({required this.icon, this.height = 28});
 
   final String icon;
+  final double height;
 
   @override
   Widget build(BuildContext context) {
     return Container(
       width: 32,
-      height: 28,
+      height: height,
       alignment: Alignment.center,
       decoration: BoxDecoration(
         color: const Color(0xFF141420),
         border: Border.all(color: Colors.white, width: 2),
       ),
-      child: Text(icon, style: const TextStyle(fontSize: 14)),
+      child: Text(icon, style: TextStyle(fontSize: height * 0.5)),
     );
   }
 }

@@ -21,19 +21,37 @@ class PixelAssetImage extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
-    return Image.asset(
-      imagePath,
+    final isNetworkPath =
+        imagePath.startsWith('http://') || imagePath.startsWith('https://');
+    final image = isNetworkPath
+        ? Image.network(
+            imagePath,
+            width: width,
+            height: height,
+            fit: fit,
+            filterQuality: FilterQuality.none,
+            errorBuilder: _errorBuilder,
+          )
+        : Image.asset(
+            imagePath,
+            width: width,
+            height: height,
+            fit: fit,
+            filterQuality: FilterQuality.none,
+            errorBuilder: _errorBuilder,
+          );
+    return image;
+  }
+
+  Widget _errorBuilder(
+    BuildContext context,
+    Object error,
+    StackTrace? stackTrace,
+  ) {
+    return PixelImagePlaceholder(
       width: width,
       height: height,
-      fit: fit,
-      filterQuality: FilterQuality.none,
-      errorBuilder: (context, error, stackTrace) {
-        return PixelImagePlaceholder(
-          width: width,
-          height: height,
-          seed: placeholderSeed ?? imagePath,
-        );
-      },
+      seed: placeholderSeed ?? imagePath,
     );
   }
 }

@@ -7,10 +7,16 @@ import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
 import 'package:home_widget/home_widget.dart';
 
+import 'package:cloud_firestore/cloud_firestore.dart';
+import 'package:flutter/foundation.dart';
+
 import 'firebase_options.dart';
+import 'utils/firestore_resilience.dart';
+import 'screens/maintenance_screen.dart';
+import 'services/global_settings_service.dart';
 import 'screens/battle_screen.dart';
 import 'screens/battle_summary_screen.dart';
-import 'screens/class_selection_screen.dart';
+import 'screens/onboarding_class_screen.dart';
 import 'screens/home_screen.dart';
 import 'screens/permissions_screen.dart';
 import 'screens/auth_screen.dart';
@@ -19,9 +25,8 @@ import 'services/alarm_service.dart';
 import 'services/player_service.dart';
 import 'services/storage_service.dart';
 import 'theme/quest_theme.dart';
-
-/// Alarm tetiklendiğinde [BattleScreen] açmak için global navigator.
-final GlobalKey<NavigatorState> rootNavigatorKey = GlobalKey<NavigatorState>();
+import 'navigation/app_navigator.dart';
+import 'widgets/live_ops_guard_host.dart';
 
 Future<void> main() async {
   WidgetsFlutterBinding.ensureInitialized();
@@ -29,6 +34,9 @@ Future<void> main() async {
   await Firebase.initializeApp(
     options: DefaultFirebaseOptions.currentPlatform,
   );
+
+  await GlobalSettingsService.instance.ensureLoaded();
+  GlobalSettingsService.instance.startListening();
 
   FlutterError.onError = FirebaseCrashlytics.instance.recordFlutterFatalError;
 
@@ -172,6 +180,7 @@ class _QuestAlarmAppState extends State<QuestAlarmApp>
       debugShowCheckedModeBanner: false,
       theme: QuestTheme.dark,
       navigatorKey: rootNavigatorKey,
+      builder: (context, child) => LiveOpsGuardHost(child: child),
       routes: {
         '/auth': (_) => const AuthScreen(),
         '/initial': (_) => const InitialRouteScreen(),
@@ -199,6 +208,21 @@ class _InitialRouteState extends State<InitialRouteScreen> {
   }
 
   Future<void> _resolveStartScreen() async {
+    try {
+      await _resolveStartScreenCore().timeout(
+        const Duration(seconds: 12),
+        onTimeout: () {
+          debugPrint('InitialRouteScreen: startup timeout — offline fallback');
+          return _applyOfflineFallback();
+        },
+      );
+    } catch (e, stack) {
+      debugPrint('InitialRouteScreen startup error: $e\n$stack');
+      await _applyOfflineFallback();
+    }
+  }
+
+  Future<void> _resolveStartScreenCore() async {
     final authUser = AuthService.instance.currentUser;
     if (authUser == null) {
       if (!mounted) return;
@@ -206,7 +230,47 @@ class _InitialRouteState extends State<InitialRouteScreen> {
       return;
     }
 
+    final settings = await GlobalSettingsService.instance.loadSettings();
+    if (settings.maintenanceMode) {
+      if (!mounted) return;
+      setState(() => _screen = LiveOpsLockScreen.maintenance());
+      return;
+    }
+
+    final isBanned = await withFirestoreTimeout<bool>(
+      () async {
+        final userDoc = await FirebaseFirestore.instance
+            .collection('users')
+            .doc(authUser.uid)
+            .get();
+        return userDoc.data()?['isBanned'] == true;
+      }(),
+      debugLabel: 'isBanned',
+      fallback: false,
+    );
+
+    if (isBanned) {
+      if (!mounted) return;
+      setState(() => _screen = LiveOpsLockScreen.banned());
+      return;
+    }
+
     await PlayerService.instance.syncFromCloudIfSignedIn();
+    await _applyMainFlow();
+  }
+
+  Future<void> _applyOfflineFallback() async {
+    if (!mounted) return;
+    final authUser = AuthService.instance.currentUser;
+    if (authUser == null) {
+      setState(() => _screen = const AuthScreen());
+      return;
+    }
+    PlayerService.instance.invalidateCache();
+    await _applyMainFlow();
+  }
+
+  Future<void> _applyMainFlow() async {
     final player = await PlayerService.instance.loadPlayer();
     final isFirstTime = await StorageService.instance.isFirstTime();
     if (!mounted) return;
@@ -215,7 +279,7 @@ class _InitialRouteState extends State<InitialRouteScreen> {
       if (isFirstTime) {
         _screen = const PermissionsScreen();
       } else if (!player.hasChosenClass) {
-        _screen = const ClassSelectionScreen();
+        _screen = const OnboardingClassScreen();
       } else {
         _screen = const HomeScreen();
       }

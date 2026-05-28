@@ -87,22 +87,30 @@ class _RetroArcadeButtonState extends State<RetroArcadeButton> {
                         ],
                 ),
                 alignment: Alignment.center,
-                child: Row(
-                  mainAxisSize: MainAxisSize.min,
-                  children: [
-                    if (widget.icon != null) ...[
-                      Text(widget.icon!, style: const TextStyle(fontSize: 16)),
-                      const SizedBox(width: 8),
-                    ],
-                    Text(
-                      widget.label,
-                      style: pixelTextStyle(
-                        fontSize: widget.fontSize,
-                        color: widget.foregroundColor,
-                        letterSpacing: 2,
+                child: Padding(
+                  padding: const EdgeInsets.symmetric(horizontal: 6),
+                  child: Row(
+                    mainAxisAlignment: MainAxisAlignment.center,
+                    children: [
+                      if (widget.icon != null) ...[
+                        Text(widget.icon!, style: const TextStyle(fontSize: 14)),
+                        const SizedBox(width: 4),
+                      ],
+                      Flexible(
+                        child: Text(
+                          widget.label,
+                          textAlign: TextAlign.center,
+                          maxLines: 1,
+                          overflow: TextOverflow.ellipsis,
+                          style: pixelTextStyle(
+                            fontSize: widget.fontSize,
+                            color: widget.foregroundColor,
+                            letterSpacing: 1,
+                          ),
+                        ),
                       ),
-                    ),
-                  ],
+                    ],
+                  ),
                 ),
               ),
             ),

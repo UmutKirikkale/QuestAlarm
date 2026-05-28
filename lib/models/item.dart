@@ -1,3 +1,5 @@
+import 'shop_currency.dart';
+
 /// Mağazada satılan eşyanın türünü temsil eder.
 enum ItemType {
   weapon,
@@ -29,8 +31,11 @@ class Item {
   /// Eşyanın görünen adı.
   final String name;
 
-  /// Mağazadaki satış fiyatı (altın).
+  /// Mağazadaki satış fiyatı.
   final int price;
+
+  /// Ödeme para birimi (altın veya elmas).
+  final ShopCurrency shopCurrency;
 
   /// Silah bonus hasarı (yalnızca [ItemType.weapon] için anlamlı).
   final int bonusDamage;
@@ -57,6 +62,7 @@ class Item {
     required this.id,
     required this.name,
     required this.price,
+    this.shopCurrency = ShopCurrency.gold,
     this.bonusDamage = 0,
     this.criticalChance = 0.0,
     this.bonusDefense = 0,
@@ -73,6 +79,7 @@ class Item {
       'id': id,
       'name': name,
       'price': price,
+      'shopCurrency': shopCurrency.name,
       'bonusDamage': bonusDamage,
       'criticalChance': criticalChance,
       'bonusDefense': bonusDefense,
@@ -90,6 +97,7 @@ class Item {
       id: id,
       name: map['name'] as String? ?? 'Unknown Item',
       price: map['price'] as int? ?? 0,
+      shopCurrency: ShopCurrencyX.parse(map['shopCurrency'] as String?),
       bonusDamage: map['bonusDamage'] as int? ?? 0,
       criticalChance: (map['criticalChance'] as num?)?.toDouble() ?? 0.0,
       bonusDefense: map['bonusDefense'] as int? ?? 0,

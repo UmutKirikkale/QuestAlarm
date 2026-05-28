@@ -9,14 +9,24 @@ import 'package:sensors_plus/sensors_plus.dart';
 
 import '../models/monster.dart';
 import '../models/battle_summary.dart';
+import '../models/game_class_definition.dart';
 import '../models/player.dart';
+import '../services/game_content_service.dart';
+import '../services/alarm_service.dart';
+import '../services/ambush_service.dart';
 import '../services/analytics_service.dart';
 import '../services/app_settings_service.dart';
+import '../services/awake_verification_service.dart';
 import '../services/battle_summary_service.dart';
+import '../services/event_progress_service.dart';
+import '../services/live_log_service.dart';
+import '../services/monster_spawn_service.dart';
+import '../services/global_settings_service.dart';
 import '../services/player_service.dart';
 import '../services/widget_service.dart';
 import '../theme/quest_theme.dart';
 import '../widgets/pixel_asset_image.dart';
+import '../widgets/retro_arcade_button.dart';
 
 const _hitSoundAsset = 'audio/hit.mp3';
 
@@ -65,9 +75,10 @@ class _BattleScreenState extends State<BattleScreen> {
   int _playerMaxHP = 100;
   int _equippedWeaponDamage = 0;
   double _criticalChance = 0.0;
-  bool _isMage = false;
+  bool _isRuneMode = false;
   bool _soundEnabled = true;
   bool _hapticEnabled = true;
+  bool _awakeMarked = false;
   _RuneShape _currentRune = _RuneShape.z;
   final List<Offset> _drawnRunePoints = [];
   Size _runeAreaSize = const Size(1, 1);
@@ -83,12 +94,16 @@ class _BattleScreenState extends State<BattleScreen> {
   @override
   void initState() {
     super.initState();
+    unawaited(GlobalSettingsService.instance.ensureLoaded());
     unawaited(_loadPlayerStats());
   }
 
   Future<void> _loadPlayerStats() async {
     final player = await PlayerService.instance.loadPlayer();
-    final monster = Monster.forPlayerLevel(player.level, _random);
+    final monster = await MonsterSpawnService.instance.pickForPlayerLevel(
+      player.level,
+      _random,
+    );
     _battleTimeout = Timer(
       monster.isBoss ? _bossBattleTimeout : _normalBattleTimeout,
       () {
@@ -98,17 +113,28 @@ class _BattleScreenState extends State<BattleScreen> {
       },
     );
 
+    final classDef = await GameContentService.instance
+        .getClassById(player.characterClassId);
+    final actionType = classDef?.actionType ??
+        (player.characterClass == CharacterClass.mage
+            ? ClassActionType.runeDraw
+            : ClassActionType.shake);
+
     if (!mounted) return;
     setState(() {
-      _isMage = player.characterClass == CharacterClass.mage;
+      _isRuneMode = actionType == ClassActionType.runeDraw;
       _playerCurrentHP = player.currentHP;
       _playerMaxHP = player.maxHP;
       _equippedWeaponDamage = player.equippedWeapon?.item.bonusDamage ?? 0;
       _criticalChance = player.equippedWeapon?.item.criticalChance ?? 0.0;
       _monster = monster;
       _monsterHP = monster.currentHP;
-      _combatHint = _isMage ? 'RÜNÜ ÇİZ VE BÜYÜYÜ SERBEST BIRAK!' : 'KILICINI SALLA!';
-      if (_isMage) {
+      _combatHint = switch (actionType) {
+        ClassActionType.runeDraw => 'RÜNÜ ÇİZ VE BÜYÜYÜ SERBEST BIRAK!',
+        ClassActionType.timed => 'DOĞRU ANI YAKALA!',
+        ClassActionType.shake => 'KILICINI SALLA!',
+      };
+      if (_isRuneMode) {
         _currentRune = _RuneShape.values[_random.nextInt(_RuneShape.values.length)];
       }
     });
@@ -120,7 +146,7 @@ class _BattleScreenState extends State<BattleScreen> {
       _hapticEnabled = settings.hapticEnabled;
     });
 
-    if (!_isMage) {
+    if (!_isRuneMode) {
       _startAccelerometer();
     }
   }
@@ -139,7 +165,7 @@ class _BattleScreenState extends State<BattleScreen> {
   }
 
   void _onAccelerometerEvent(UserAccelerometerEvent event) {
-    if (_battleEnded || _isMage) return;
+    if (_battleEnded || _isRuneMode) return;
 
     final magnitude = sqrt(
       event.x * event.x + event.y * event.y + event.z * event.z,
@@ -210,12 +236,59 @@ class _BattleScreenState extends State<BattleScreen> {
     setState(() => _floatingDamages.removeWhere((e) => e.id == id));
   }
 
+  Future<void> _markAwakeIfNeeded() async {
+    if (_awakeMarked) return;
+    _awakeMarked = true;
+    await AwakeVerificationService.instance.markAwakeVerified();
+    await AmbushService.instance.cancelAmbushCheck();
+  }
+
+  Future<void> _snoozeAlarm() async {
+    if (_battleEnded) return;
+    setState(() => _battleEnded = true);
+    _battleTimeout?.cancel();
+    await _accelerometerSub?.cancel();
+    _accelerometerSub = null;
+
+    try {
+      final scheduled = await AlarmService.instance.snoozeAlarm(
+        delay: const Duration(minutes: 5),
+      );
+      if (!mounted) return;
+      final label =
+          '${scheduled.hour.toString().padLeft(2, '0')}:${scheduled.minute.toString().padLeft(2, '0')}';
+      ScaffoldMessenger.of(context).showSnackBar(
+        SnackBar(
+          content: Text(
+            'Alarm $label için ertelendi (5 dk)',
+            style: const TextStyle(fontFamily: 'monospace', fontSize: 12),
+          ),
+          backgroundColor: QuestTheme.surfaceVariant,
+        ),
+      );
+      Navigator.pop(context, false);
+    } catch (e) {
+      if (!mounted) return;
+      ScaffoldMessenger.of(context).showSnackBar(
+        SnackBar(
+          content: Text(
+            'Erteleme başarısız: $e',
+            style: const TextStyle(fontFamily: 'monospace', fontSize: 12),
+          ),
+          backgroundColor: QuestTheme.error,
+        ),
+      );
+    }
+  }
+
   void _dealDamage(
     int amount, {
     required bool isCritical,
     bool skipFeedback = false,
   }) {
     if (_battleEnded) return;
+
+    unawaited(_markAwakeIfNeeded());
 
     if (!skipFeedback) {
       if (isCritical) {
@@ -262,6 +335,10 @@ class _BattleScreenState extends State<BattleScreen> {
       baseGold: _monster.rewardGold,
       extraMultiplier: _monster.isBoss ? 3.0 : 1.0,
       monsterName: _monster.name,
+    );
+    unawaited(EventProgressService.instance.incrementOnVictory());
+    unawaited(
+      LiveLogService.instance.logMonsterDefeated(monsterName: _monster.name),
     );
     await BattleSummaryService.instance.save(
       BattleSummary(
@@ -332,6 +409,9 @@ class _BattleScreenState extends State<BattleScreen> {
     unawaited(
       WidgetService.instance.updateLiveWidget(status: LiveWidgetStatus.sad),
     );
+    if (penalty.brokenItemNames.isNotEmpty) {
+      unawaited(LiveLogService.instance.logWeaponBroken());
+    }
 
     if (!mounted) return;
 
@@ -412,7 +492,7 @@ class _BattleScreenState extends State<BattleScreen> {
 
   Future<void> _completeRuneIfValid() async {
     final accuracy = _runeAccuracy();
-    if (accuracy < 0.8 || _battleEnded || !_isMage) {
+    if (accuracy < 0.8 || _battleEnded || !_isRuneMode) {
       if (mounted) {
         setState(() => _drawnRunePoints.clear());
       }
@@ -450,6 +530,41 @@ class _BattleScreenState extends State<BattleScreen> {
                 child: Column(
                   crossAxisAlignment: CrossAxisAlignment.stretch,
                   children: [
+                    Row(
+                      children: [
+                        Expanded(
+                          child: RetroArcadeButton(
+                            label: 'ERTELE (5 DK)',
+                            icon: '⏰',
+                            height: 42,
+                            fontSize: 10,
+                            backgroundColor: const Color(0xFF2A3550),
+                            foregroundColor: QuestTheme.secondary,
+                            onPressed: _battleEnded
+                                ? () {}
+                                : () => unawaited(_snoozeAlarm()),
+                          ),
+                        ),
+                        const SizedBox(width: 8),
+                        Expanded(
+                          child: RetroArcadeButton(
+                            label: 'ALARMI KAPAT',
+                            height: 42,
+                            fontSize: 10,
+                            backgroundColor: const Color(0xFF5B0A0A),
+                            foregroundColor: Colors.white,
+                            onPressed: _battleEnded
+                                ? () {}
+                                : () async {
+                                    await AlarmService.instance
+                                        .dismissMorningAlarm();
+                                    if (!context.mounted) return;
+                                    Navigator.pop(context, false);
+                                  },
+                          ),
+                        ),
+                      ],
+                    ),
                     _ShakableCombatZone(
                       shakeKey: _combatShakeKey,
                       child: Column(
@@ -459,9 +574,10 @@ class _BattleScreenState extends State<BattleScreen> {
                             monsterName: _monster.name,
                             current: _monsterHP,
                             max: _monster.maxHP,
+                            compact: true,
                           ),
                           const Spacer(),
-                          _isMage
+                          _isRuneMode
                               ? _RuneCircleArea(
                                   rune: _currentRune,
                                   drawnPoints: _drawnRunePoints,
@@ -469,6 +585,7 @@ class _BattleScreenState extends State<BattleScreen> {
                                     _runeAreaSize = size;
                                   },
                                   onPanPoint: (local) {
+                                    unawaited(_markAwakeIfNeeded());
                                     setState(() => _drawnRunePoints.add(local));
                                   },
                                   onPanEnd: (_) => unawaited(_completeRuneIfValid()),
@@ -481,7 +598,7 @@ class _BattleScreenState extends State<BattleScreen> {
                                     _buildFloatingDamageTexts(),
                                   ],
                                 ),
-                          if (_isMage)
+                          if (_isRuneMode)
                             SizedBox(
                               height: 70,
                               child: Stack(
@@ -494,28 +611,41 @@ class _BattleScreenState extends State<BattleScreen> {
                         ],
                       ),
                     ),
-                    _PlayerHpBar(
-                      current: _playerCurrentHP,
-                      max: _playerMaxHP,
-                    ),
-                    const SizedBox(height: 16),
-                    Text(
-                      _battleEnded
-                          ? 'SAVAŞ BİTTİ!'
-                          : _combatHint,
-                      textAlign: TextAlign.center,
-                      style: _pixelTextStyle(
-                        fontSize: 14,
-                        color: QuestTheme.primary,
-                      ),
-                    ),
-                    const SizedBox(height: 6),
-                    Text(
-                      'Silah +$_equippedWeaponDamage DMG · Kritik %${(_criticalChance * 100).toStringAsFixed(0)}',
-                      textAlign: TextAlign.center,
-                      style: _pixelTextStyle(
-                        fontSize: 11,
-                        color: QuestTheme.onSurfaceMuted,
+                    Flexible(
+                      child: FittedBox(
+                        fit: BoxFit.scaleDown,
+                        alignment: Alignment.bottomCenter,
+                        child: Column(
+                          mainAxisSize: MainAxisSize.min,
+                          crossAxisAlignment: CrossAxisAlignment.stretch,
+                          children: [
+                            _PlayerHpBar(
+                              current: _playerCurrentHP,
+                              max: _playerMaxHP,
+                              compact: true,
+                            ),
+                            const SizedBox(height: 8),
+                            Text(
+                              _battleEnded
+                                  ? 'SAVAŞ BİTTİ!'
+                                  : _combatHint,
+                              textAlign: TextAlign.center,
+                              style: _pixelTextStyle(
+                                fontSize: 13,
+                                color: QuestTheme.primary,
+                              ),
+                            ),
+                            const SizedBox(height: 4),
+                            Text(
+                              'Silah +$_equippedWeaponDamage DMG · Kritik %${(_criticalChance * 100).toStringAsFixed(0)}',
+                              textAlign: TextAlign.center,
+                              style: _pixelTextStyle(
+                                fontSize: 10,
+                                color: QuestTheme.onSurfaceMuted,
+                              ),
+                            ),
+                          ],
+                        ),
                       ),
                     ),
                   ],
@@ -753,26 +883,35 @@ class _MonsterHpBar extends StatelessWidget {
     required this.monsterName,
     required this.current,
     required this.max,
+    this.compact = false,
   });
 
   final String monsterName;
   final int current;
   final int max;
+  final bool compact;
 
   @override
   Widget build(BuildContext context) {
     final ratio = max > 0 ? (current / max).clamp(0.0, 1.0) : 0.0;
+    final barHeight = compact ? 24.0 : 36.0;
 
     return Column(
-      crossAxisAlignment: CrossAxisAlignment.start,
+      mainAxisSize: MainAxisSize.min,
+      crossAxisAlignment: CrossAxisAlignment.stretch,
       children: [
         Text(
           '$monsterName HP',
-          style: _pixelTextStyle(fontSize: 12, color: QuestTheme.error),
+          style: _pixelTextStyle(
+            fontSize: compact ? 10 : 12,
+            color: QuestTheme.error,
+          ),
+          maxLines: 1,
+          overflow: TextOverflow.ellipsis,
         ),
-        const SizedBox(height: 6),
+        SizedBox(height: compact ? 4 : 6),
         Container(
-          height: 36,
+          height: barHeight,
           decoration: BoxDecoration(
             color: const Color(0xFF1A0A0A),
             border: Border.all(color: Colors.black, width: 4),
@@ -789,7 +928,7 @@ class _MonsterHpBar extends StatelessWidget {
                 child: Text(
                   '$current / $max',
                   style: _pixelTextStyle(
-                    fontSize: 16,
+                    fontSize: compact ? 12 : 16,
                     color: Colors.white,
                     shadows: const [
                       Shadow(color: Colors.black, offset: Offset(2, 2)),
@@ -873,25 +1012,32 @@ class _PlayerHpBar extends StatelessWidget {
   const _PlayerHpBar({
     required this.current,
     required this.max,
+    this.compact = false,
   });
 
   final int current;
   final int max;
+  final bool compact;
 
   @override
   Widget build(BuildContext context) {
     final ratio = max > 0 ? (current / max).clamp(0.0, 1.0) : 0.0;
+    final barHeight = compact ? 22.0 : 28.0;
 
     return Column(
-      crossAxisAlignment: CrossAxisAlignment.start,
+      mainAxisSize: MainAxisSize.min,
+      crossAxisAlignment: CrossAxisAlignment.stretch,
       children: [
         Text(
           'SENİN HP',
-          style: _pixelTextStyle(fontSize: 12, color: QuestTheme.primary),
+          style: _pixelTextStyle(
+            fontSize: compact ? 10 : 12,
+            color: QuestTheme.primary,
+          ),
         ),
-        const SizedBox(height: 6),
+        SizedBox(height: compact ? 4 : 6),
         Container(
-          height: 28,
+          height: barHeight,
           decoration: BoxDecoration(
             color: QuestTheme.surfaceVariant,
             border: Border.all(color: Colors.white, width: 3),

@@ -8,12 +8,15 @@ import 'package:flutter/material.dart' show TimeOfDay;
 import 'package:audioplayers/audioplayers.dart';
 import 'package:flutter/foundation.dart';
 import 'package:flutter/services.dart';
+import 'package:flutter/widgets.dart';
 import 'package:flutter_local_notifications/flutter_local_notifications.dart';
 import 'package:flutter_timezone/flutter_timezone.dart';
 import 'package:permission_handler/permission_handler.dart';
 import 'package:shared_preferences/shared_preferences.dart';
+import 'ambush_service.dart';
 import 'app_settings_service.dart';
 import 'analytics_service.dart';
+import 'awake_verification_service.dart';
 import '../models/battle_summary.dart';
 import 'battle_summary_service.dart';
 import 'player_service.dart';
@@ -32,6 +35,12 @@ const String prefsPendingBattle = 'pending_battle_screen';
 
 /// SharedPreferences: kurulu alarm zamanı (ISO-8601).
 const String prefsScheduledAlarm = 'scheduled_alarm_iso';
+
+/// Bildirimde "Alarmı Kapat" aksiyonu.
+const String notificationActionDismissAlarm = 'dismiss_alarm';
+
+/// Bildirimde "Ertele (5 dk)" aksiyonu.
+const String notificationActionSnoozeAlarm = 'snooze_alarm';
 
 /// 8-bit alarm sesi (CC0 — assets/audio/ATTRIBUTION.txt).
 const String alarmAssetPath = 'audio/alarm.m4a';
@@ -201,6 +210,14 @@ class AlarmService {
   }
 
   void _onNotificationTapped(NotificationResponse response) {
+    if (response.actionId == notificationActionDismissAlarm) {
+      unawaited(dismissMorningAlarm());
+      return;
+    }
+    if (response.actionId == notificationActionSnoozeAlarm) {
+      unawaited(snoozeAlarm());
+      return;
+    }
     unawaited(_handleNotificationTap());
   }
 
@@ -220,6 +237,8 @@ class AlarmService {
 
     final prefs = await SharedPreferences.getInstance();
     await prefs.setBool(prefsPendingBattle, true);
+    await AwakeVerificationService.instance.resetForNewAlarm();
+    await AmbushService.instance.cancelAmbushCheck();
     await _showRingingNotification();
     await playAlarmSound();
   }
@@ -239,6 +258,18 @@ class AlarmService {
       ongoing: true,
       autoCancel: false,
       icon: 'ic_notification',
+      actions: <AndroidNotificationAction>[
+        AndroidNotificationAction(
+          notificationActionSnoozeAlarm,
+          'Ertele (5 dk)',
+          showsUserInterface: true,
+        ),
+        AndroidNotificationAction(
+          notificationActionDismissAlarm,
+          'Alarmı Kapat',
+          showsUserInterface: true,
+        ),
+      ],
     );
 
     await _notifications!.show(
@@ -340,6 +371,7 @@ class AlarmService {
     final prefs = await SharedPreferences.getInstance();
     await prefs.remove(prefsScheduledAlarm);
     await stopAlarmSound();
+    await AmbushService.instance.cancelAmbushCheck();
   }
 
   /// Aktif alarm/savaş sırasında kaçış — ağır ceza uygular.
@@ -365,11 +397,20 @@ class AlarmService {
     await clearPendingBattle();
   }
 
-  /// Alarmı erteler; aktif savaş varsa ağır ceza uygular.
+  /// Alarmı erteler: mevcut oturumu kapatır, 5 dk sonra tekrar çalar.
   Future<DateTime> snoozeAlarm({
     Duration delay = const Duration(minutes: 5),
   }) async {
-    await forfeitActiveAlarm();
+    await stopAlarmSound();
+    if (Platform.isAndroid) {
+      await AndroidAlarmManager.cancel(questAlarmId);
+    }
+    final prefs = await SharedPreferences.getInstance();
+    await prefs.setBool(prefsPendingBattle, false);
+    await _notifications?.cancel(questAlarmId);
+    await AmbushService.instance.cancelAmbushCheck();
+    await AwakeVerificationService.instance.resetForNewAlarm();
+
     final snoozeAt = DateTime.now().add(delay);
     final scheduled = await scheduleAlarm(
       TimeOfDay(hour: snoozeAt.hour, minute: snoozeAt.minute),
@@ -440,12 +481,31 @@ class AlarmService {
     _ringController.add(null);
   }
 
-  /// Savaş ekranı açıldıktan sonra bayrağı temizler.
+  /// Savaş ekranı açıldıktan sonra veya alarm kapatıldığında bayrağı temizler.
+  /// Uyanma doğrulanmadıysa arka planda pusu kontrolü başlatır.
   Future<void> clearPendingBattle() async {
     final prefs = await SharedPreferences.getInstance();
+    final hadPending = prefs.getBool(prefsPendingBattle) ?? false;
     await prefs.setBool(prefsPendingBattle, false);
     await _notifications?.cancel(questAlarmId);
     await stopAlarmSound();
+    if (hadPending) {
+      await _scheduleAmbushCheckIfStillAsleep();
+    }
+  }
+
+  /// Alarm tamamen kapatıldı (direkt kapat / bildirimden durdur).
+  Future<void> dismissMorningAlarm() async {
+    await clearPendingBattle();
+  }
+
+  Future<void> _scheduleAmbushCheckIfStillAsleep() async {
+    final verified = await AwakeVerificationService.instance.isAwakeVerified();
+    if (verified) {
+      await AmbushService.instance.cancelAmbushCheck();
+      return;
+    }
+    await AmbushService.instance.scheduleAmbushCheck();
   }
 
   /// 8-bit alarm sesini döngüde çalar (asset yoksa sistem sesi).
@@ -486,7 +546,21 @@ void alarmRingCallback() {
 /// Bildirime dokunulduğunda (arka plan) savaş bayrağını ayarlar.
 @pragma('vm:entry-point')
 void notificationTapBackground(NotificationResponse response) {
+  if (response.actionId == notificationActionSnoozeAlarm) {
+    unawaited(AlarmService.instance.snoozeAlarm());
+    return;
+  }
+  if (response.actionId == notificationActionDismissAlarm) {
+    unawaited(_backgroundDismissMorningAlarm());
+    return;
+  }
   SharedPreferences.getInstance().then((prefs) {
     prefs.setBool(prefsPendingBattle, true);
   });
+}
+
+@pragma('vm:entry-point')
+Future<void> _backgroundDismissMorningAlarm() async {
+  WidgetsFlutterBinding.ensureInitialized();
+  await AlarmService.instance.dismissMorningAlarm();
 }

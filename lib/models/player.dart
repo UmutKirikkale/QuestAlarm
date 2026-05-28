@@ -16,7 +16,15 @@ class Player {
   final int currentHP;
   final int maxHP;
   final int gold;
+
+  /// Premium elmas para birimi.
+  final int diamonds;
+
   final CharacterClass characterClass;
+
+  /// Firestore `global_classes` doküman kimliği (dinamik sınıflar).
+  final String characterClassId;
+
   final bool hasChosenClass;
 
   /// Ardışık uyanma / zafer günü serisi.
@@ -25,19 +33,31 @@ class Player {
   final EquippedItem? equippedWeapon;
   final EquippedItem? equippedArmor;
 
-  const Player({
+  /// Satın alınmış harita kimlikleri (`global_maps`).
+  final List<String> unlockedMapIds;
+
+  /// Pro üyelik — reklamsız deneyim ve bonus ekonomi.
+  final bool isPro;
+
+  Player({
     required this.level,
     required this.currentXP,
     required this.nextLevelXP,
     required this.currentHP,
     required this.maxHP,
     required this.gold,
+    this.diamonds = 0,
     required this.characterClass,
+    String? characterClassId,
     this.hasChosenClass = true,
     this.streak = 0,
     this.equippedWeapon,
     this.equippedArmor,
-  });
+    this.unlockedMapIds = const [],
+    this.isPro = false,
+  }) : characterClassId = characterClassId ?? characterClass.name;
+
+  bool hasUnlockedMap(String mapId) => unlockedMapIds.contains(mapId);
 
   /// Yeni oyuncu — başlangıç kılıcı %100 dayanıklılıkla kuşanılı.
   factory Player.initial({
@@ -77,11 +97,15 @@ class Player {
       'currentHP': currentHP,
       'maxHP': maxHP,
       'gold': gold,
+      'diamonds': diamonds,
       'characterClass': characterClass.name,
+      'characterClassId': characterClassId,
       'hasChosenClass': hasChosenClass,
       'streak': streak,
       if (equippedWeapon != null) 'equippedWeapon': equippedWeapon!.toMap(),
       if (equippedArmor != null) 'equippedArmor': equippedArmor!.toMap(),
+      'unlockedMapIds': unlockedMapIds,
+      'isPro': isPro,
     };
   }
 
@@ -101,12 +125,24 @@ class Player {
       currentHP: map['currentHP'] as int? ?? 100,
       maxHP: map['maxHP'] as int? ?? 100,
       gold: map['gold'] as int? ?? 0,
+      diamonds: map['diamonds'] as int? ?? 0,
       characterClass: _parseCharacterClass(map['characterClass'] as String?),
+      characterClassId: map['characterClassId'] as String? ??
+          map['characterClass'] as String?,
       hasChosenClass: map['hasChosenClass'] as bool? ?? true,
       streak: map['streak'] as int? ?? 0,
       equippedWeapon: parseEquipped('equippedWeapon'),
       equippedArmor: parseEquipped('equippedArmor'),
+      unlockedMapIds: _parseStringList(map['unlockedMapIds']),
+      isPro: map['isPro'] as bool? ?? false,
     );
+  }
+
+  static List<String> _parseStringList(dynamic raw) {
+    if (raw is List) {
+      return raw.map((e) => e.toString()).toList(growable: false);
+    }
+    return const [];
   }
 
   Player copyWith({
@@ -116,11 +152,15 @@ class Player {
     int? currentHP,
     int? maxHP,
     int? gold,
+    int? diamonds,
     CharacterClass? characterClass,
+    String? characterClassId,
     bool? hasChosenClass,
     int? streak,
     EquippedItem? equippedWeapon,
     EquippedItem? equippedArmor,
+    List<String>? unlockedMapIds,
+    bool? isPro,
     bool clearWeapon = false,
     bool clearArmor = false,
   }) {
@@ -131,11 +171,15 @@ class Player {
       currentHP: currentHP ?? this.currentHP,
       maxHP: maxHP ?? this.maxHP,
       gold: gold ?? this.gold,
+      diamonds: diamonds ?? this.diamonds,
       characterClass: characterClass ?? this.characterClass,
+      characterClassId: characterClassId ?? this.characterClassId,
       hasChosenClass: hasChosenClass ?? this.hasChosenClass,
       streak: streak ?? this.streak,
       equippedWeapon: clearWeapon ? null : (equippedWeapon ?? this.equippedWeapon),
       equippedArmor: clearArmor ? null : (equippedArmor ?? this.equippedArmor),
+      unlockedMapIds: unlockedMapIds ?? this.unlockedMapIds,
+      isPro: isPro ?? this.isPro,
     );
   }
 
